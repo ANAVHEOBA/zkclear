@@ -1,0 +1,14 @@
+# Keep GitHub language stats focused on authored source.
+
+# Vendored dependencies
+contracts/lib/** linguist-vendored
+
+# Generated/build outputs
+contracts/out/** linguist-generated
+contracts/cache/** linguist-generated
+contracts/broadcast/** linguist-generated
+contracts/src/contracts/generated/** linguist-generated
+zk/artifacts/** linguist-generated
+
+# Optional local logs
+zk/pipeline.log linguist-generated
