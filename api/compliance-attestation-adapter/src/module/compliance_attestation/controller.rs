@@ -40,7 +40,11 @@ pub async fn get_attestation(
 ) -> impl IntoResponse {
     match crud::get_attestation_by_id(&state, &attestation_id).await {
         Ok(resp) => (axum::http::StatusCode::OK, Json(resp)),
-        Err(AppError { status, code, message }) => {
+        Err(AppError {
+            status,
+            code,
+            message,
+        }) => {
             error!(error_code = code, reason = %message, "get attestation rejected");
             (status, Json(error_response(code, message)))
         }
@@ -76,5 +80,6 @@ fn error_response(code: &str, message: String) -> IntakeComplianceResponse {
         expires_at: 0,
         error_code: Some(code.to_string()),
         reason: message,
+        fx_quote: None,
     }
 }

@@ -1,4 +1,5 @@
 use super::model::NormalizedSubject;
+use crate::service::confidential_http_service::FxQuote;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,6 +50,7 @@ pub struct IntakeComplianceResponse {
     pub expires_at: i64,
     pub error_code: Option<String>,
     pub reason: String,
+    pub fx_quote: Option<FxQuote>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

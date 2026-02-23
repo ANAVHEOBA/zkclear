@@ -11,8 +11,10 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let input_path = env::var("OFAC_SDN_CSV_PATH").unwrap_or_else(|_| "data/raw/ofac_sdn.csv".to_string());
-    let output_path = env::var("SANCTIONS_OUTPUT_PATH").unwrap_or_else(|_| "data/sanctions.json".to_string());
+    let input_path =
+        env::var("OFAC_SDN_CSV_PATH").unwrap_or_else(|_| "data/raw/ofac_sdn.csv".to_string());
+    let output_path =
+        env::var("SANCTIONS_OUTPUT_PATH").unwrap_or_else(|_| "data/sanctions.json".to_string());
 
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -35,10 +37,22 @@ fn run() -> Result<(), String> {
 
         entries.push(SanctionsEntry {
             source: "OFAC".to_string(),
-            program: if program.is_empty() { "SDN".to_string() } else { program.to_string() },
+            program: if program.is_empty() {
+                "SDN".to_string()
+            } else {
+                program.to_string()
+            },
             name: name.to_string(),
-            jurisdiction: if country.is_empty() { None } else { Some(country.to_string()) },
-            address: if address.is_empty() { None } else { Some(address.to_string()) },
+            jurisdiction: if country.is_empty() {
+                None
+            } else {
+                Some(country.to_string())
+            },
+            address: if address.is_empty() {
+                None
+            } else {
+                Some(address.to_string())
+            },
         });
     }
 
@@ -47,7 +61,8 @@ fn run() -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&output_path).parent() {
         fs::create_dir_all(parent).map_err(|e| format!("failed to create output dir: {e}"))?;
     }
-    let mut file = fs::File::create(&output_path).map_err(|e| format!("failed to create output file: {e}"))?;
+    let mut file =
+        fs::File::create(&output_path).map_err(|e| format!("failed to create output file: {e}"))?;
     file.write_all(&payload)
         .map_err(|e| format!("failed to write output file: {e}"))?;
     Ok(())

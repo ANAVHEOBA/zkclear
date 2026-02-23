@@ -33,7 +33,10 @@ async fn main() {
         "compliance-attestation-adapter started"
     );
 
-    let infra = match (MongoConfig::from_app(&config), RedisConfig::from_app(&config)) {
+    let infra = match (
+        MongoConfig::from_app(&config),
+        RedisConfig::from_app(&config),
+    ) {
         (Some(mongo), Some(redis)) => match init_infra(&mongo, &redis).await {
             Ok(i) => Some(i),
             Err(e) => {

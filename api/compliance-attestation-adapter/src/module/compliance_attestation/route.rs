@@ -1,7 +1,7 @@
 use crate::app::AppState;
 use crate::module::compliance_attestation::controller;
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 pub fn register_routes(state: AppState) -> Router {
     Router::new()

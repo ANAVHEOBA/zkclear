@@ -8,7 +8,8 @@ pub fn verify_internal_signature(
     signature_hex: &str,
     signing_secret: &str,
 ) -> Result<(), String> {
-    let signature = hex::decode(signature_hex).map_err(|e| format!("invalid signature hex: {e}"))?;
+    let signature =
+        hex::decode(signature_hex).map_err(|e| format!("invalid signature hex: {e}"))?;
 
     let mut mac = HmacSha256::new_from_slice(signing_secret.as_bytes())
         .map_err(|e| format!("hmac init failed: {e}"))?;

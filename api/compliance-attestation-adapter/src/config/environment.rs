@@ -18,6 +18,10 @@ pub struct AppConfig {
     pub require_internal_signature: bool,
     pub internal_signing_secret: Option<String>,
     pub encryption_key_hex: Option<String>,
+    pub frankfurter_base_url: String,
+    pub fx_base_currency: String,
+    pub fx_quote_currency: String,
+    pub fx_lookup_enabled: bool,
 }
 
 impl AppConfig {
@@ -34,7 +38,10 @@ impl AppConfig {
             mongodb_database: read_optional_env("MONGODB_DATABASE"),
             redis_url: read_optional_env("REDIS_URL"),
             intake_max_age_seconds: read_optional_i64("INTAKE_MAX_AGE_SECONDS", 300)?,
-            intake_max_future_skew_seconds: read_optional_i64("INTAKE_MAX_FUTURE_SKEW_SECONDS", 30)?,
+            intake_max_future_skew_seconds: read_optional_i64(
+                "INTAKE_MAX_FUTURE_SKEW_SECONDS",
+                30,
+            )?,
             sanctions_data_path: read_optional_string("SANCTIONS_DATA_PATH", "data/sanctions.json"),
             policy_snapshot_path: read_optional_string(
                 "POLICY_SNAPSHOT_PATH",
@@ -46,6 +53,13 @@ impl AppConfig {
             require_internal_signature: read_optional_bool("REQUIRE_INTERNAL_SIGNATURE", false),
             internal_signing_secret: read_optional_env("INTERNAL_SIGNING_SECRET"),
             encryption_key_hex: read_optional_env("ENCRYPTION_KEY_HEX"),
+            frankfurter_base_url: read_optional_string(
+                "FRANKFURTER_BASE_URL",
+                "https://api.frankfurter.dev/v1",
+            ),
+            fx_base_currency: read_optional_string("FX_BASE_CURRENCY", "EUR"),
+            fx_quote_currency: read_optional_string("FX_QUOTE_CURRENCY", "USD"),
+            fx_lookup_enabled: read_optional_bool("FX_LOOKUP_ENABLED", true),
         })
     }
 }

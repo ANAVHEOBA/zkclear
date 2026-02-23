@@ -24,12 +24,16 @@ pub struct ScreeningResult {
 }
 
 pub fn load_sanctions_entries(path: &str) -> Result<Vec<SanctionsEntry>, String> {
-    let raw = std::fs::read_to_string(path).map_err(|e| format!("failed to read sanctions file: {e}"))?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| format!("failed to read sanctions file: {e}"))?;
     serde_json::from_str::<Vec<SanctionsEntry>>(&raw)
         .map_err(|e| format!("failed to parse sanctions file: {e}"))
 }
 
-pub fn screen_subjects(subjects: &[NormalizedSubject], entries: &[SanctionsEntry]) -> ScreeningResult {
+pub fn screen_subjects(
+    subjects: &[NormalizedSubject],
+    entries: &[SanctionsEntry],
+) -> ScreeningResult {
     let mut hits = Vec::new();
 
     for subject in subjects {

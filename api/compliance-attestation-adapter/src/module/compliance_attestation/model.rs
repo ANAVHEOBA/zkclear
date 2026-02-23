@@ -1,3 +1,4 @@
+use crate::service::confidential_http_service::FxQuote;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +51,7 @@ pub struct ComplianceAttestationRecord {
     pub expires_at: i64,
     pub sanctions_hit_count: usize,
     pub normalized_subjects: Vec<NormalizedSubject>,
+    pub fx_quote: Option<FxQuote>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

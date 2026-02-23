@@ -3,16 +3,21 @@ use super::model::{
     AuditEventRecord, ComplianceAttestationRecord, ComplianceRequestRecord, NormalizedSubject,
     ProviderResponseReference, SubjectType,
 };
-use super::schema::{ComplianceDecision, IntakeComplianceRequest, IntakeComplianceResponse, SubjectInput};
+use super::schema::{
+    ComplianceDecision, IntakeComplianceRequest, IntakeComplianceResponse, SubjectInput,
+};
 use crate::app::AppState;
 use crate::infra::mongo::{
     ATTESTATIONS_COLLECTION, AUDIT_EVENTS_COLLECTION, PROVIDER_REFS_COLLECTION, REQUESTS_COLLECTION,
 };
 use crate::infra::redis::{IDEMPOTENCY_PREFIX, JOB_STATUS_PREFIX, SCREEN_CACHE_PREFIX};
 use crate::service::attestation_hash_service::{build_attestation_id, compute_attestation_hash};
+use crate::service::confidential_http_service::{FxQuote, fetch_fx_quote};
 use crate::service::encryption_service::encrypt_for_storage;
 use crate::service::policy_eval_service::{evaluate_intake_policy, load_policy_snapshot};
-use crate::service::sanctions_service::{ScreeningHit, ScreeningResult, load_sanctions_entries, screen_subjects};
+use crate::service::sanctions_service::{
+    ScreeningHit, ScreeningResult, load_sanctions_entries, screen_subjects,
+};
 use crate::service::signature_service::verify_internal_signature;
 use mongodb::Collection;
 use mongodb::bson::doc;
@@ -83,11 +88,24 @@ pub async fn intake_and_normalize(
     };
 
     let (decision, risk_score) = evaluate_intake_policy(&screening, &policy_snapshot.thresholds);
+    let fx_quote = if state.config.fx_lookup_enabled {
+        fetch_fx_quote(
+            &state.config.frankfurter_base_url,
+            &state.config.fx_base_currency,
+            &state.config.fx_quote_currency,
+        )
+        .await
+        .ok()
+    } else {
+        None
+    };
     let issued_at = req.timestamp;
     let expires_at = req
         .timestamp
         .checked_add(state.config.attestation_ttl_seconds)
-        .ok_or_else(|| AppError::bad_request("ATTESTATION_TIME_ERROR", "invalid expires_at value"))?;
+        .ok_or_else(|| {
+            AppError::bad_request("ATTESTATION_TIME_ERROR", "invalid expires_at value")
+        })?;
     let attestation_hash = compute_attestation_hash(
         &req.workflow_run_id,
         &req.request_id,
@@ -119,6 +137,7 @@ pub async fn intake_and_normalize(
         expires_at,
         error_code: None,
         reason: "accepted".to_string(),
+        fx_quote,
     };
 
     if let Some(infra) = &state.infra {
@@ -130,6 +149,7 @@ pub async fn intake_and_normalize(
             &req.nonce,
             &request_hash,
             &screening,
+            response.fx_quote.as_ref(),
         )
         .await?;
         finalize_job_keys(
@@ -199,6 +219,7 @@ pub async fn get_attestation_by_id(
         expires_at: record.expires_at,
         error_code: None,
         reason: "accepted".to_string(),
+        fx_quote: record.fx_quote,
     })
 }
 
@@ -273,10 +294,9 @@ fn maybe_verify_signature(state: &AppState, req: &IntakeComplianceRequest) -> Re
                 "INTERNAL_SIGNING_SECRET is required when signature auth is enabled",
             )
         })?;
-    let signature = req
-        .internal_signature
-        .as_deref()
-        .ok_or_else(|| AppError::unauthorized("MISSING_SIGNATURE", "internal_signature is required"))?;
+    let signature = req.internal_signature.as_deref().ok_or_else(|| {
+        AppError::unauthorized("MISSING_SIGNATURE", "internal_signature is required")
+    })?;
     let signing_payload = canonical_signing_payload(req)?;
     verify_internal_signature(&signing_payload, signature, signing_secret)
         .map_err(|e| AppError::unauthorized("BAD_SIGNATURE", e))
@@ -368,11 +388,17 @@ async fn check_idempotent_existing(
     request_id: &str,
     request_hash: &str,
 ) -> Result<Option<IntakeComplianceResponse>, AppError> {
-    let requests: Collection<ComplianceRequestRecord> = infra.mongo_db.collection(REQUESTS_COLLECTION);
+    let requests: Collection<ComplianceRequestRecord> =
+        infra.mongo_db.collection(REQUESTS_COLLECTION);
     let existing = requests
         .find_one(doc! { "request_id": request_id })
         .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("mongo find request failed: {e}")))?;
+        .map_err(|e| {
+            AppError::internal(
+                "PERSISTENCE_ERROR",
+                format!("mongo find request failed: {e}"),
+            )
+        })?;
     let Some(existing) = existing else {
         return Ok(None);
     };
@@ -388,7 +414,12 @@ async fn check_idempotent_existing(
     let att = attestations
         .find_one(doc! { "request_id": request_id })
         .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("mongo find attestation failed: {e}")))?;
+        .map_err(|e| {
+            AppError::internal(
+                "PERSISTENCE_ERROR",
+                format!("mongo find attestation failed: {e}"),
+            )
+        })?;
     let Some(att) = att else {
         return Err(AppError::internal(
             "IDEMPOTENCY_STATE_ERROR",
@@ -413,6 +444,7 @@ async fn check_idempotent_existing(
         expires_at: att.expires_at,
         error_code: None,
         reason: "accepted".to_string(),
+        fx_quote: att.fx_quote,
     }))
 }
 
@@ -453,10 +485,7 @@ async fn reserve_replay_keys(
 
     match status {
         0 => Ok(()),
-        1 => Err(AppError::bad_request(
-            "REPLAY_NONCE",
-            "nonce already used",
-        )),
+        1 => Err(AppError::bad_request("REPLAY_NONCE", "nonce already used")),
         2 => Err(AppError::bad_request(
             "REPLAY_REQUEST_HASH",
             "request hash already used",
@@ -487,8 +516,9 @@ async fn get_or_compute_screening(
         .await
         .map_err(|e| AppError::internal("REDIS_ERROR", format!("redis get cache failed: {e}")))?;
     if let Some(raw) = cached {
-        let parsed = serde_json::from_str::<CachedScreening>(&raw)
-            .map_err(|e| AppError::internal("REDIS_ERROR", format!("cached screening parse failed: {e}")))?;
+        let parsed = serde_json::from_str::<CachedScreening>(&raw).map_err(|e| {
+            AppError::internal("REDIS_ERROR", format!("cached screening parse failed: {e}"))
+        })?;
         return Ok(ScreeningResult {
             hits: parsed.hits,
             match_digest: parsed.match_digest,
@@ -537,8 +567,10 @@ async fn persist_records(
     nonce: &str,
     request_hash: &str,
     screening: &ScreeningResult,
+    fx_quote: Option<&FxQuote>,
 ) -> Result<(), AppError> {
-    let requests: Collection<ComplianceRequestRecord> = infra.mongo_db.collection(REQUESTS_COLLECTION);
+    let requests: Collection<ComplianceRequestRecord> =
+        infra.mongo_db.collection(REQUESTS_COLLECTION);
     let provider_refs: Collection<ProviderResponseReference> =
         infra.mongo_db.collection(PROVIDER_REFS_COLLECTION);
     let attestations: Collection<ComplianceAttestationRecord> =
@@ -555,24 +587,28 @@ async fn persist_records(
         policy_hash: response.policy_hash.clone(),
     };
 
-    let encryption_key = state
-        .config
-        .encryption_key_hex
-        .as_deref()
-        .ok_or_else(|| {
-            AppError::internal(
-                "ENCRYPTION_CONFIG_MISSING",
-                "ENCRYPTION_KEY_HEX required for provider payload persistence",
-            )
-        })?;
-    let raw_provider_payload = serde_json::to_string(&screening.hits)
-        .map_err(|e| AppError::internal("SERIALIZATION_ERROR", format!("provider payload encode failed: {e}")))?;
+    let encryption_key = state.config.encryption_key_hex.as_deref().ok_or_else(|| {
+        AppError::internal(
+            "ENCRYPTION_CONFIG_MISSING",
+            "ENCRYPTION_KEY_HEX required for provider payload persistence",
+        )
+    })?;
+    let raw_provider_payload = serde_json::to_string(&serde_json::json!({
+        "sanctions_hits": &screening.hits,
+        "fx_quote": fx_quote,
+    }))
+    .map_err(|e| {
+        AppError::internal(
+            "SERIALIZATION_ERROR",
+            format!("provider payload encode failed: {e}"),
+        )
+    })?;
     let encrypted_ref = encrypt_for_storage(&raw_provider_payload, encryption_key)
         .map_err(|e| AppError::internal("ENCRYPTION_ERROR", e))?;
     let provider_ref = ProviderResponseReference {
         request_id: response.request_id.clone(),
         provider_ref_id: format!("prov_{}", &response.attestation_id),
-        source: "local_sanctions_dataset".to_string(),
+        source: "local_sanctions_dataset+frankfurter".to_string(),
         redacted_payload_ref: encrypted_ref,
         created_at: now_unix()?,
     };
@@ -590,20 +626,24 @@ async fn persist_records(
         expires_at: response.expires_at,
         sanctions_hit_count: response.sanctions_hit_count,
         normalized_subjects: response.normalized_subjects.clone(),
+        fx_quote: response.fx_quote.clone(),
     };
 
-    requests
-        .insert_one(request_doc)
-        .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("insert request failed: {e}")))?;
-    provider_refs
-        .insert_one(provider_ref)
-        .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("insert provider ref failed: {e}")))?;
-    attestations
-        .insert_one(att_doc)
-        .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("insert attestation failed: {e}")))?;
+    requests.insert_one(request_doc).await.map_err(|e| {
+        AppError::internal("PERSISTENCE_ERROR", format!("insert request failed: {e}"))
+    })?;
+    provider_refs.insert_one(provider_ref).await.map_err(|e| {
+        AppError::internal(
+            "PERSISTENCE_ERROR",
+            format!("insert provider ref failed: {e}"),
+        )
+    })?;
+    attestations.insert_one(att_doc).await.map_err(|e| {
+        AppError::internal(
+            "PERSISTENCE_ERROR",
+            format!("insert attestation failed: {e}"),
+        )
+    })?;
 
     write_audit_event(
         infra,
@@ -662,7 +702,9 @@ async fn write_audit_event(
             details,
         })
         .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("insert audit failed: {e}")))?;
+        .map_err(|e| {
+            AppError::internal("PERSISTENCE_ERROR", format!("insert audit failed: {e}"))
+        })?;
     Ok(())
 }
 

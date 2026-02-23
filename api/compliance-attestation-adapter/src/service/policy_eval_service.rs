@@ -24,7 +24,8 @@ pub struct PolicyThresholds {
 }
 
 pub fn load_policy_snapshot(path: &str) -> Result<PolicySnapshot, String> {
-    let raw = std::fs::read_to_string(path).map_err(|e| format!("failed to read policy snapshot: {e}"))?;
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read policy snapshot: {e}"))?;
     serde_json::from_str::<PolicySnapshot>(&raw)
         .map_err(|e| format!("failed to parse policy snapshot: {e}"))
 }
@@ -33,7 +34,12 @@ pub fn evaluate_intake_policy(
     screening: &ScreeningResult,
     thresholds: &PolicyThresholds,
 ) -> (ComplianceDecision, u16) {
-    let max_conf = screening.hits.iter().map(|h| h.confidence).max().unwrap_or(0);
+    let max_conf = screening
+        .hits
+        .iter()
+        .map(|h| h.confidence)
+        .max()
+        .unwrap_or(0);
     if max_conf >= thresholds.fail_confidence {
         return (ComplianceDecision::Fail, thresholds.fail_risk_score);
     }

@@ -205,6 +205,16 @@ cd api/compliance-attestation-adapter && cargo test
 - ZK pipeline: `zk/README.md`
 - API flow: `api/flow.md`
 
+## Where Chainlink Is Used
+
+- CRE workflow orchestration spec: `creworkflow/workflow-spec/otc_settlement.yaml`
+- CRE orchestration runtime and confidential HTTP call path: `creworkflow/orchestrator/src/main.rs`
+- CRE simulation used in demo: `creworkflow/scripts/cre-cli-simulate.sh`
+- External API ingestion for compliance (Frankfurter FX context): `api/compliance-attestation-adapter/src/service/confidential_http_service.rs`
+- Compliance attestation path that consumes external data and persists provider evidence: `api/compliance-attestation-adapter/src/module/compliance_attestation/crud.rs`
+- Proof job publish bridge from API to onchain publish module: `api/proof-job-coordinator/src/service/publish_service.rs`
+- CRE publish-receipt onchain write to Sepolia SettlementRegistry: `creworkflow/publish-receipt/src/chain.rs`
+
 ## Notes
 
 - Use Sepolia for the primary demo path.

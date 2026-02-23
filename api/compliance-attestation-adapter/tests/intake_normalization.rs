@@ -2,20 +2,19 @@ use axum::body::{Body, to_bytes};
 use compliance_attestation_adapter::app::{AppState, build_router};
 use compliance_attestation_adapter::config::environment::AppConfig;
 use compliance_attestation_adapter::module::compliance_attestation::schema::{
-    ComplianceDecision, IntakeComplianceRequest, IntakeComplianceResponse, SubjectInput, EntityInput
+    ComplianceDecision, EntityInput, IntakeComplianceRequest, IntakeComplianceResponse,
+    SubjectInput,
 };
 use http::Request;
-use tower::util::ServiceExt;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tower::util::ServiceExt;
 use uuid::Uuid;
 
 #[tokio::test]
 async fn intake_normalizes_and_flags_sanctions_hit() {
-    let sanctions_path = std::env::temp_dir().join(format!(
-        "zkclear-sanctions-{}.json",
-        Uuid::now_v7()
-    ));
+    let sanctions_path =
+        std::env::temp_dir().join(format!("zkclear-sanctions-{}.json", Uuid::now_v7()));
     fs::write(
         &sanctions_path,
         r#"[{"source":"TEST","program":"DEMO","name":"Acme Restricted Trading LLC","jurisdiction":"GB","address":null}]"#,
@@ -39,6 +38,10 @@ async fn intake_normalizes_and_flags_sanctions_hit() {
         require_internal_signature: false,
         internal_signing_secret: None,
         encryption_key_hex: None,
+        frankfurter_base_url: "https://api.frankfurter.dev/v1".to_string(),
+        fx_base_currency: "EUR".to_string(),
+        fx_quote_currency: "USD".to_string(),
+        fx_lookup_enabled: false,
     };
     let app = build_router(AppState::new(config.clone(), None));
 
@@ -67,9 +70,7 @@ async fn intake_normalizes_and_flags_sanctions_hit() {
         .method("POST")
         .uri("/v1/compliance/intake")
         .header("content-type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&request).expect("serialize"),
-        ))
+        .body(Body::from(serde_json::to_vec(&request).expect("serialize")))
         .expect("build request");
 
     let http_resp = app.oneshot(http_req).await.expect("response");
@@ -94,9 +95,7 @@ async fn intake_normalizes_and_flags_sanctions_hit() {
         .method("POST")
         .uri("/v1/compliance/intake")
         .header("content-type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&request).expect("serialize"),
-        ))
+        .body(Body::from(serde_json::to_vec(&request).expect("serialize")))
         .expect("build request");
     let http_resp2 = app2.oneshot(http_req2).await.expect("response");
     let body2 = to_bytes(http_resp2.into_body(), usize::MAX)

@@ -48,7 +48,9 @@ fn digest_subjects(subjects: &[NormalizedSubject]) -> String {
         .map(|s| CanonicalSubject {
             subject_id: s.subject_id.clone(),
             subject_type: match s.subject_type {
-                crate::module::compliance_attestation::model::SubjectType::Counterparty => "COUNTERPARTY",
+                crate::module::compliance_attestation::model::SubjectType::Counterparty => {
+                    "COUNTERPARTY"
+                }
                 crate::module::compliance_attestation::model::SubjectType::Entity => "ENTITY",
             },
             jurisdiction: s.jurisdiction.clone(),
@@ -56,7 +58,11 @@ fn digest_subjects(subjects: &[NormalizedSubject]) -> String {
             legal_name: s.legal_name.clone(),
         })
         .collect();
-    stable.sort_by(|a, b| a.subject_id.cmp(&b.subject_id).then(a.subject_type.cmp(b.subject_type)));
+    stable.sort_by(|a, b| {
+        a.subject_id
+            .cmp(&b.subject_id)
+            .then(a.subject_type.cmp(b.subject_type))
+    });
 
     let encoded = serde_json::to_vec(&stable).expect("canonical serialization should not fail");
     let mut hasher = Sha256::new();
