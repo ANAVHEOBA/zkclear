@@ -1,0 +1,14 @@
+{
+  "name": "zkclear-zk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ZK circuits and integration tests for ZK-Clear",
+  "scripts": {
+    "test": "mocha tests/**/*.integration.test.js --timeout 180000"
+  },
+  "devDependencies": {
+    "circom_tester": "^0.0.24",
+    "circom2": "^0.2.22",
+    "mocha": "^10.8.2"
+  }
+}

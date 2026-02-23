@@ -1,0 +1,20 @@
+{
+  "amount_in": "1010",
+  "amount_out": "1000",
+  "fee": "10",
+  "execution_size": "25",
+  "execution_price": "40",
+  "limit_price": "45",
+  "max_notional": "2000",
+  "notional": "1000",
+  "policy_version_private": "7",
+  "receipt_hash_private": "12345",
+  "domain_separator_private": "6789",
+  "workflow_run_id_private": "4567",
+  "policy_version_public": "7",
+  "receipt_hash_public": "12345",
+  "domain_separator_public": "6789",
+  "workflow_run_id_public": "4567",
+  "binding_hash_public": "444814",
+  "notional_public": "1000"
+}

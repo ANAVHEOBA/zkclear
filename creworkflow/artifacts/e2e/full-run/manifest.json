@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-02-22T11:02:31Z",
+  "workspace_root": "/home/a/zkclear/creworkflow",
+  "steps": [
+    {
+      "id": "intent-intake",
+      "input": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step1_intent_intake_input.json",
+      "output": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step1_intent_intake_output.json"
+    },
+    {
+      "id": "confidential-match",
+      "input": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step2_confidential_match_input.json",
+      "output": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step2_confidential_match_output.json"
+    },
+    {
+      "id": "proof-generate",
+      "input": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step3_proof_generate_input.json",
+      "output": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step3_proof_generate_output.json"
+    },
+    {
+      "id": "settle-private",
+      "input": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step4_settle_private_input.json",
+      "output": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step4_settle_private_output.json"
+    },
+    {
+      "id": "publish-receipt",
+      "input": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step5_publish_receipt_input.json",
+      "output": "/home/a/zkclear/creworkflow/artifacts/e2e/full-run/step5_publish_receipt_output.json"
+    }
+  ]
+}

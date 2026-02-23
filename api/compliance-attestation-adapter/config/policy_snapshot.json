@@ -1,0 +1,13 @@
+{
+  "active": {
+    "version": "policy-v1",
+    "hash": "0x9f1a7f0cc4bc2d2b6f8ac4f2dce0f357ce9db2a77b53b96cecf76412fd1f5a11"
+  },
+  "thresholds": {
+    "review_confidence": 70,
+    "fail_confidence": 90,
+    "pass_risk_score": 5,
+    "review_risk_score": 60,
+    "fail_risk_score": 95
+  }
+}

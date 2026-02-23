@@ -1,0 +1,18 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Node/Rust build artifacts
+**/node_modules/
+**/target/
+
+# Foundry/solidity artifacts
+contracts/out/
+contracts/cache/
+
+# Logs and temp files
+*.log
+.DS_Store
+.vscode/
+.idea/

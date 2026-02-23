@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+
+# Rust
+/target/
+**/target/
+
+# Build/test artifacts
+/artifacts/e2e/full-run/*.tmp
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

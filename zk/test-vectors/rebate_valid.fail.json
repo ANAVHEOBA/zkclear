@@ -1,0 +1,14 @@
+{
+  "gross_fee": "100",
+  "rebate_amount": "25",
+  "protocol_fee": "70",
+  "bps_denom": "10000",
+  "rebate_bps": "2000",
+  "policy_version_private": "7",
+  "policy_version_public": "8",
+  "recipient_commitment_private": "999001",
+  "recipient_commitment_public": "999002",
+  "gross_fee_public": "100",
+  "rebate_amount_public": "20",
+  "protocol_fee_public": "80"
+}

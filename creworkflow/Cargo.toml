@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+  "intent-intake",
+  "confidential-match",
+  "proof-generate",
+  "settle-private",
+  "publish-receipt",
+  "orchestrator",
+]

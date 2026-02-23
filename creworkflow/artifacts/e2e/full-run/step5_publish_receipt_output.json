@@ -1,0 +1,12 @@
+{
+  "settlement_registry": "0x3e3a14f46d13e156daa99bf234224a57b1c79da5",
+  "tx_hash": "0x8dbe8b6f1778a7e3a125fe8ed3c2ca23639f4c8d6d07cb3b3cfd98eec1977eb5",
+  "onchain_receipt_event_id": "0xaccdfc8fdd4a020612ff15e3f092acd4ad9f0e6ec15149c111728125f73c40f8",
+  "stored_receipt_record": {
+    "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+    "proof_hash": "0x1bb6f21baf72cfd5c4332d9bd25d76ba7eada5dbbbc5fa0a984ce49fcdb61749",
+    "policy_version": 1,
+    "status": "settled",
+    "receipt_hash": "0x641d667ce442c8bc40dcd5d5e5050c42a2d74b4df5c0f914fd276a5b2e53dce5"
+  }
+}

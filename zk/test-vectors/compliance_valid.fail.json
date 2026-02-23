@@ -1,0 +1,13 @@
+{
+  "compliance_pass_bit": "0",
+  "risk_score": "90",
+  "max_risk_score": "70",
+  "policy_version_private": "7",
+  "policy_version_public": "8",
+  "attestation_hash_private": "123456",
+  "attestation_hash_public": "123450",
+  "sanctions_commitment_private": "98765",
+  "sanctions_commitment_public": "98764",
+  "allowlist_commitment_private": "55555",
+  "allowlist_commitment_public": "55554"
+}

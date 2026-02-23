@@ -1,0 +1,18 @@
+{
+  "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+  "match_decision": "accept",
+  "private_settlement_params": {
+    "asset_pair": "ETH/USDC",
+    "buy_intent_id": "intent-buy-1",
+    "sell_intent_id": "intent-sell-1",
+    "execution_size": 4.0,
+    "execution_price": 3010.0,
+    "notional": 12040.0
+  },
+  "policy_check_result": {
+    "passed": true,
+    "policy_version": 1,
+    "reason": "all policy checks passed"
+  },
+  "compliance_attestation_hash": "0x98c5b6783a6f9c157600a361769fe68f4359abd75b884b7994af3a58e667f925"
+}

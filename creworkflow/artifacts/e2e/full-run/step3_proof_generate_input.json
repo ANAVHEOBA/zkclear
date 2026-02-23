@@ -1,0 +1,22 @@
+{
+  "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+  "match_result": {
+    "accepted": true
+  },
+  "policy_result": {
+    "passed": true,
+    "policy_version": 1
+  },
+  "settlement_params": {
+    "asset_pair": "ETH/USDC",
+    "buy_intent_id": "intent-buy-1",
+    "sell_intent_id": "intent-sell-1",
+    "execution_size": 4,
+    "execution_price": 3010,
+    "notional": 12040
+  },
+  "proving_timeout_ms": 3000,
+  "estimated_proving_time_ms": 500,
+  "domain_separator": "zkclear-sepolia-domain-v1",
+  "witness_seed": "witness-seed-123456"
+}

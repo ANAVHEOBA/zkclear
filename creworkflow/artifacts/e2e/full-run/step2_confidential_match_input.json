@@ -1,0 +1,53 @@
+{
+  "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+  "policy": {
+    "policy_version": 1,
+    "expected_policy_version": 1,
+    "max_risk_score": 70,
+    "max_notional": 500000
+  },
+  "intents": [
+    {
+      "intent_id": "intent-buy-1",
+      "signer": "0x1111",
+      "asset_pair": "ETH/USDC",
+      "side": "buy",
+      "size": 5,
+      "limit_price": 3020,
+      "expiry": 1750003600,
+      "counterparty_constraints": {
+        "allow_list": [
+          "desk_a"
+        ],
+        "deny_list": [
+          "desk_x"
+        ]
+      },
+      "nonce": "nonce-a"
+    },
+    {
+      "intent_id": "intent-sell-1",
+      "signer": "0x2222",
+      "asset_pair": "ETH/USDC",
+      "side": "sell",
+      "size": 4,
+      "limit_price": 3000,
+      "expiry": 1750003600,
+      "counterparty_constraints": {
+        "allow_list": [
+          "desk_a"
+        ],
+        "deny_list": [
+          "desk_x"
+        ]
+      },
+      "nonce": "nonce-b"
+    }
+  ],
+  "external_signals": {
+    "api_available": true,
+    "compliance_passed": true,
+    "risk_score": 42,
+    "attestation_payload": "provider=mock_conf_http;result=ok"
+  }
+}

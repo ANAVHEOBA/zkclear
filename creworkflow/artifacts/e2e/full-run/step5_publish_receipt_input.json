@@ -1,0 +1,23 @@
+{
+  "settlement_registry": "0x3e3a14f46d13e156daa99bf234224a57b1c79da5",
+  "publisher_address": "0x6D21167d874C842386e8c484519B5ddBBaB87b43",
+  "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+  "proof_hash": "0x1bb6f21baf72cfd5c4332d9bd25d76ba7eada5dbbbc5fa0a984ce49fcdb61749",
+  "policy_version": 1,
+  "status": "settled",
+  "receipt_hash": "0x641d667ce442c8bc40dcd5d5e5050c42a2d74b4df5c0f914fd276a5b2e53dce5",
+  "proof_hex": "0xa13c735500d4616fbe8da8e2f2d84598135b9f05117cb1c0e5496cc3c260cfae",
+  "public_signals": [
+    "0xf9d46aae3f923b07d70cf0c012be15b077bc5185eb7004a46e858a6409c36d78",
+    "0x641d667ce442c8bc40dcd5d5e5050c42a2d74b4df5c0f914fd276a5b2e53dce5",
+    "1"
+  ],
+  "chain_validation": {
+    "authorized_publisher": true,
+    "policy_active": true,
+    "proof_valid": true,
+    "signal_binding_valid": true,
+    "duplicate_workflow_run": false,
+    "duplicate_receipt_hash": false
+  }
+}

@@ -1,0 +1,150 @@
+name: zkclear-otc-settlement
+version: "1.0"
+description: Private OTC + treasury settlement workflow
+entrypoint: intent-intake
+
+steps:
+  - id: intent-intake
+    kind: compute
+    module: intent-intake
+    input:
+      encrypted_intents: "$.encrypted_intents"
+      current_unix_ts: "$.current_unix_ts"
+      seen_nonces: "$.seen_nonces"
+      payload_reference: "$.payload_reference"
+    output:
+      workflow_run_id: "$.workflow_run_id"
+      normalized_private_intents: "$.normalized_private_intents"
+      intent_commitment_hashes: "$.intent_commitment_hashes"
+    on_success: confidential-match
+
+  - id: confidential-match
+    kind: confidential-http-and-compute
+    module: confidential-match
+    input:
+      workflow_run_id: "$steps.intent-intake.workflow_run_id"
+      policy:
+        policy_version: "$.policy.policy_version"
+        expected_policy_version: "$.policy.expected_policy_version"
+        max_risk_score: "$.policy.max_risk_score"
+        max_notional: "$.policy.max_notional"
+      intents: "$steps.intent-intake.normalized_private_intents"
+      external_signals:
+        api_available: "$.external_signals.api_available"
+        compliance_passed: "$.external_signals.compliance_passed"
+        risk_score: "$.external_signals.risk_score"
+        attestation_payload: "$.external_signals.attestation_payload"
+    output:
+      match_decision: "$.match_decision"
+      private_settlement_params: "$.private_settlement_params"
+      policy_check_result: "$.policy_check_result"
+      compliance_attestation_hash: "$.compliance_attestation_hash"
+    on_success: proof-generate
+
+  - id: proof-generate
+    kind: compute
+    module: proof-generate
+    input:
+      workflow_run_id: "$steps.intent-intake.workflow_run_id"
+      match_result:
+        accepted: "$steps.confidential-match.match_decision == 'accept'"
+      policy_result:
+        passed: "$steps.confidential-match.policy_check_result.passed"
+        policy_version: "$steps.confidential-match.policy_check_result.policy_version"
+      settlement_params: "$steps.confidential-match.private_settlement_params"
+      proving_timeout_ms: "$.proving.proving_timeout_ms"
+      estimated_proving_time_ms: "$.proving.estimated_proving_time_ms"
+      domain_separator: "$.proving.domain_separator"
+      witness_seed: "$.proving.witness_seed"
+    output:
+      proof_bytes: "$.proof_bytes"
+      public_signals: "$.public_signals"
+      proof_hash: "$.proof_hash"
+      receipt_hash: "$.receipt_hash"
+      policy_version: "$.policy_version"
+    on_success: settle-private
+
+  - id: settle-private
+    kind: private-execution
+    module: settle-private
+    input:
+      workflow_run_id: "$steps.intent-intake.workflow_run_id"
+      proof_bundle:
+        proof_hash: "$steps.proof-generate.proof_hash"
+        receipt_hash: "$steps.proof-generate.receipt_hash"
+        approved: true
+      settlement_instruction:
+        asset: "$steps.confidential-match.private_settlement_params.asset_pair"
+        amount: "$steps.confidential-match.private_settlement_params.notional"
+        from_account: "$steps.confidential-match.private_settlement_params.buy_intent_id"
+        to_account: "$steps.confidential-match.private_settlement_params.sell_intent_id"
+        transfer_simulation_ok: true
+        counterparty_conflict: false
+      execution:
+        max_retries: "$.settlement_execution.max_retries"
+        timeout_ms: "$.settlement_execution.timeout_ms"
+        estimated_execution_ms: "$.settlement_execution.estimated_execution_ms"
+        retryable_error_sequence: "$.settlement_execution.retryable_error_sequence"
+    output:
+      settlement_status: "$.settlement_status"
+      private_execution_reference_ids: "$.private_execution_reference_ids"
+    on_success: publish-receipt
+
+  - id: publish-receipt
+    kind: evm-write
+    module: publish-receipt
+    input:
+      settlement_registry: "$.publish.settlement_registry"
+      publisher_address: "$.publish.publisher_address"
+      workflow_run_id: "$steps.intent-intake.workflow_run_id"
+      proof_hash: "$steps.proof-generate.proof_hash"
+      policy_version: "$steps.proof-generate.policy_version"
+      status: settled
+      receipt_hash: "$steps.proof-generate.receipt_hash"
+      proof_hex: "$hex($steps.proof-generate.proof_bytes)"
+      public_signals: "$steps.proof-generate.public_signals"
+      chain_validation:
+        authorized_publisher: true
+        policy_active: true
+        proof_valid: true
+        signal_binding_valid: true
+        duplicate_workflow_run: false
+        duplicate_receipt_hash: false
+    output:
+      tx_hash: "$.tx_hash"
+      onchain_receipt_event_id: "$.onchain_receipt_event_id"
+      stored_receipt_record: "$.stored_receipt_record"
+
+failure_policy:
+  on_step_error: stop
+  classify:
+    - code: API_UNAVAILABLE
+      from_step: confidential-match
+    - code: POLICY_MISMATCH
+      from_step: confidential-match
+    - code: RISK_THRESHOLD_FAIL
+      from_step: confidential-match
+    - code: NO_MATCH
+      from_step: confidential-match
+    - code: CIRCUIT_CONSTRAINT_FAILURE
+      from_step: proof-generate
+    - code: WITNESS_GENERATION_FAILURE
+      from_step: proof-generate
+    - code: PROVING_TIMEOUT
+      from_step: proof-generate
+    - code: TRANSFER_FAILURE
+      from_step: settle-private
+    - code: COUNTERPARTY_SETTLEMENT_CONFLICT
+      from_step: settle-private
+    - code: TIMEOUT_RETRY_EXHAUSTED
+      from_step: settle-private
+    - code: INVALID_PROOF
+      from_step: publish-receipt
+    - code: STALE_POLICY
+      from_step: publish-receipt
+    - code: DUPLICATE_WORKFLOW_RUN
+      from_step: publish-receipt
+    - code: DUPLICATE_RECEIPT_HASH
+      from_step: publish-receipt
+    - code: UNAUTHORIZED_CALLER
+      from_step: publish-receipt

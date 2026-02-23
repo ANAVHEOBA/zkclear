@@ -1,0 +1,24 @@
+{
+  "workflow_run_id": "019c8503-e150-7661-8e8b-5ddd40607c79",
+  "proof_bundle": {
+    "proof_hash": "0x1bb6f21baf72cfd5c4332d9bd25d76ba7eada5dbbbc5fa0a984ce49fcdb61749",
+    "receipt_hash": "0x641d667ce442c8bc40dcd5d5e5050c42a2d74b4df5c0f914fd276a5b2e53dce5",
+    "approved": true
+  },
+  "settlement_instruction": {
+    "asset": "ETH/USDC",
+    "amount": 12040,
+    "from_account": "intent-buy-1",
+    "to_account": "intent-sell-1",
+    "transfer_simulation_ok": true,
+    "counterparty_conflict": false
+  },
+  "execution": {
+    "max_retries": 2,
+    "timeout_ms": 3000,
+    "estimated_execution_ms": 500,
+    "retryable_error_sequence": [
+      false
+    ]
+  }
+}
