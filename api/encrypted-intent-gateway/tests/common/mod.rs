@@ -7,7 +7,9 @@ use encrypted_intent_gateway::app::{AppState, build_router};
 use encrypted_intent_gateway::config::db::{MongoConfig, RedisConfig};
 use encrypted_intent_gateway::config::environment::AppConfig;
 use encrypted_intent_gateway::infra::init_infra;
-use encrypted_intent_gateway::module::encrypted_intent::schema::{SubmitIntentRequest, SubmitIntentResponse};
+use encrypted_intent_gateway::module::encrypted_intent::schema::{
+    SubmitIntentRequest, SubmitIntentResponse,
+};
 use http::Request;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,7 +41,8 @@ pub async fn build_test_context() -> TestContext {
     let app = build_router(AppState::new(config.clone(), infra));
 
     let signing_key = SigningKey::from_bytes(&[7u8; 32]);
-    let decrypt_key_hex = "1111111111111111111111111111111111111111111111111111111111111111".to_string();
+    let decrypt_key_hex =
+        "1111111111111111111111111111111111111111111111111111111111111111".to_string();
 
     unsafe {
         std::env::set_var("CONFIDENTIAL_RUNTIME", "true");
@@ -72,11 +75,17 @@ pub async fn post_submit(
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let payload: SubmitIntentResponse = serde_json::from_slice(&body).expect("deserialize response");
+    let payload: SubmitIntentResponse =
+        serde_json::from_slice(&body).expect("deserialize response");
     (status, payload)
 }
 
-pub fn sign_request(signing_key: &SigningKey, payload: &str, nonce: &str, timestamp: i64) -> String {
+pub fn sign_request(
+    signing_key: &SigningKey,
+    payload: &str,
+    nonce: &str,
+    timestamp: i64,
+) -> String {
     let msg = format!("{payload}:{nonce}:{timestamp}");
     let sig = signing_key.sign(msg.as_bytes());
     hex::encode(sig.to_bytes())

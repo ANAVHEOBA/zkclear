@@ -193,3 +193,66 @@ pub struct HealthResponse {
     pub error_code: Option<String>,
     pub reason: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestrationIntentRequest {
+    pub encrypted_payload: String,
+    pub signature: String,
+    pub signer_public_key: String,
+    pub nonce: String,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestrationCounterpartyInput {
+    pub counterparty_id: String,
+    pub country: Option<String>,
+    pub wallet_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestrationEntityInput {
+    pub entity_id: String,
+    pub registration_country: Option<String>,
+    pub legal_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestrationSubjectInput {
+    pub counterparty: Option<OrchestrationCounterpartyInput>,
+    pub entity: Option<OrchestrationEntityInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartOtcOrchestrationRequest {
+    pub intents: Vec<OrchestrationIntentRequest>,
+    pub subjects: Vec<OrchestrationSubjectInput>,
+    pub proof_type: ProofType,
+    pub idempotency_key: Option<String>,
+    pub receipt_context: Option<Value>,
+    pub request_id: Option<String>,
+    pub compliance_nonce: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtcIntentSubmitResult {
+    pub accepted: bool,
+    pub workflow_run_id: String,
+    pub intent_ids: Vec<String>,
+    pub commitment_hashes: Vec<String>,
+    pub error_code: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartOtcOrchestrationResponse {
+    pub accepted: bool,
+    pub workflow_run_id: String,
+    pub policy_version: String,
+    pub attestation_id: String,
+    pub attestation_hash: String,
+    pub intent_submissions: Vec<OtcIntentSubmitResult>,
+    pub proof_job: Option<SubmitProofJobResponse>,
+    pub error_code: Option<String>,
+    pub reason: String,
+}

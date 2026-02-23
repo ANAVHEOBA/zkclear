@@ -1,4 +1,5 @@
 use axum::extract::State;
+use axum::http::HeaderMap;
 use axum::{Json, response::IntoResponse};
 use tracing::{error, info};
 
@@ -11,10 +12,17 @@ use super::schema::{SubmitIntentRequest, SubmitIntentResponse};
 
 pub async fn submit_intent(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<SubmitIntentRequest>,
 ) -> impl IntoResponse {
     let started = metrics_service::start_timer();
-    match crud::submit_intent(&state, req).await {
+    let forced_workflow_run_id = headers
+        .get("x-workflow-run-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned);
+    match crud::submit_intent(&state, req, forced_workflow_run_id).await {
         Ok(resp) => {
             metrics_service::record_intent_submit_success();
             let (ok_count, err_count) = metrics_service::snapshot();

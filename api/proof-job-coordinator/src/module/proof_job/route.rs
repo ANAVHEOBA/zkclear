@@ -6,6 +6,10 @@ use axum::routing::{get, post};
 pub fn register_routes(state: AppState) -> Router {
     Router::new()
         .route("/v1/proof-jobs", post(controller::submit_proof_job))
+        .route(
+            "/v1/orchestrations/otc",
+            post(controller::start_otc_orchestration),
+        )
         .route("/v1/proof-jobs/health", get(controller::health))
         .route(
             "/v1/proof-jobs/queue-stats",

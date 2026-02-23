@@ -1,5 +1,5 @@
-use axum::routing::post;
 use axum::Router;
+use axum::routing::post;
 
 use crate::app::AppState;
 use crate::module::encrypted_intent::controller;

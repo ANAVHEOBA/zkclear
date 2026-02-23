@@ -27,6 +27,9 @@ pub struct AppConfig {
     pub publish_publisher_address: Option<String>,
     pub internal_auth_enabled: bool,
     pub internal_auth_secret: Option<String>,
+    pub intent_gateway_base_url: String,
+    pub compliance_adapter_base_url: String,
+    pub policy_snapshot_base_url: String,
 }
 
 impl AppConfig {
@@ -66,6 +69,18 @@ impl AppConfig {
             publish_publisher_address: env::var("PUBLISH_PUBLISHER_ADDRESS").ok(),
             internal_auth_enabled: read_optional_bool("INTERNAL_AUTH_ENABLED", false),
             internal_auth_secret: env::var("INTERNAL_AUTH_SECRET").ok(),
+            intent_gateway_base_url: read_optional_string(
+                "INTENT_GATEWAY_BASE_URL",
+                "http://127.0.0.1:8080",
+            ),
+            compliance_adapter_base_url: read_optional_string(
+                "COMPLIANCE_ADAPTER_BASE_URL",
+                "http://127.0.0.1:8082",
+            ),
+            policy_snapshot_base_url: read_optional_string(
+                "POLICY_SNAPSHOT_BASE_URL",
+                "http://127.0.0.1:8083",
+            ),
         })
     }
 }

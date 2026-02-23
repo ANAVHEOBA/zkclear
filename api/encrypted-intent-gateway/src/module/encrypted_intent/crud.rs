@@ -1,5 +1,5 @@
-use super::model::EncryptedIntent;
 use super::error::AppError;
+use super::model::EncryptedIntent;
 use super::schema::{SubmitIntentRequest, SubmitIntentResponse};
 use crate::app::AppState;
 use crate::service::commitment_service::compute_commitment;
@@ -16,6 +16,7 @@ const REPLAY_TTL_SECONDS: u64 = 60 * 60 * 24;
 pub async fn submit_intent(
     state: &AppState,
     req: SubmitIntentRequest,
+    forced_workflow_run_id: Option<String>,
 ) -> Result<SubmitIntentResponse, AppError> {
     validate_request(state, &req)?;
 
@@ -30,7 +31,10 @@ pub async fn submit_intent(
     decrypt_intent(&req.encrypted_payload)
         .map_err(|e| AppError::bad_request("DECRYPT_FAILED", e))?;
 
-    let workflow_run_id = generate_workflow_run_id();
+    let workflow_run_id = forced_workflow_run_id
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(generate_workflow_run_id);
     let commitment_hash = compute_commitment(
         &req.encrypted_payload,
         &req.nonce,
@@ -132,11 +136,11 @@ fn validate_intent_model(intent: &EncryptedIntent) -> Result<(), AppError> {
 async fn insert_intent(state: &AppState, intent: &EncryptedIntent) -> Result<(), AppError> {
     validate_intent_model(intent)?;
 
-    let collection: Collection<EncryptedIntent> = state.infra.mongo_db.collection(INTENTS_COLLECTION);
-    collection
-        .insert_one(intent)
-        .await
-        .map_err(|e| AppError::internal("PERSISTENCE_ERROR", format!("mongodb insert failed: {e}")))?;
+    let collection: Collection<EncryptedIntent> =
+        state.infra.mongo_db.collection(INTENTS_COLLECTION);
+    collection.insert_one(intent).await.map_err(|e| {
+        AppError::internal("PERSISTENCE_ERROR", format!("mongodb insert failed: {e}"))
+    })?;
     Ok(())
 }
 
@@ -178,7 +182,9 @@ async fn reserve_replay_keys(
         .arg(REPLAY_TTL_SECONDS as i64)
         .invoke_async(&mut conn)
         .await
-        .map_err(|e| AppError::internal("REDIS_ERROR", format!("redis replay script failed: {e}")))?;
+        .map_err(|e| {
+            AppError::internal("REDIS_ERROR", format!("redis replay script failed: {e}"))
+        })?;
 
     if replay_status == 1 {
         return Err(AppError::bad_request(

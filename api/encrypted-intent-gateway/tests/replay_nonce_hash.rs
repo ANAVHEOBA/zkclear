@@ -14,7 +14,8 @@ async fn replay_nonce_or_hash_should_be_rejected() {
 
     let timestamp = unix_now();
     let nonce = format!("nonce-replay-{}", Uuid::now_v7());
-    let payload_1 = encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":10}");
+    let payload_1 =
+        encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":10}");
     let sig_1 = sign_request(&ctx.signing_key, &payload_1, &nonce, timestamp);
 
     let req_1 = SubmitIntentRequest {
@@ -29,7 +30,8 @@ async fn replay_nonce_or_hash_should_be_rejected() {
     assert_eq!(status_1, http::StatusCode::OK);
     assert!(body_1.accepted);
 
-    let payload_2 = encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":11}");
+    let payload_2 =
+        encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":11}");
     let sig_2 = sign_request(&ctx.signing_key, &payload_2, &nonce, timestamp);
     let req_2 = SubmitIntentRequest {
         encrypted_payload: payload_2,

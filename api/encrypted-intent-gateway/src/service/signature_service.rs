@@ -1,8 +1,16 @@
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
-pub fn verify_signature(payload: &str, nonce: &str, timestamp: i64, signature_hex: &str, pubkey_hex: &str) -> Result<(), String> {
-    let key_bytes = hex::decode(pubkey_hex).map_err(|e| format!("invalid signer_public_key hex: {e}"))?;
-    let sig_bytes = hex::decode(signature_hex).map_err(|e| format!("invalid signature hex: {e}"))?;
+pub fn verify_signature(
+    payload: &str,
+    nonce: &str,
+    timestamp: i64,
+    signature_hex: &str,
+    pubkey_hex: &str,
+) -> Result<(), String> {
+    let key_bytes =
+        hex::decode(pubkey_hex).map_err(|e| format!("invalid signer_public_key hex: {e}"))?;
+    let sig_bytes =
+        hex::decode(signature_hex).map_err(|e| format!("invalid signature hex: {e}"))?;
 
     let key_arr: [u8; 32] = key_bytes
         .as_slice()
@@ -13,7 +21,8 @@ pub fn verify_signature(payload: &str, nonce: &str, timestamp: i64, signature_he
         .try_into()
         .map_err(|_| "signature must be 64 bytes".to_string())?;
 
-    let verifying_key = VerifyingKey::from_bytes(&key_arr).map_err(|e| format!("invalid public key: {e}"))?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&key_arr).map_err(|e| format!("invalid public key: {e}"))?;
     let signature = Signature::from_bytes(&sig_arr);
 
     let message = format!("{payload}:{nonce}:{timestamp}");

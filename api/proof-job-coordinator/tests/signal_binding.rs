@@ -33,6 +33,9 @@ fn test_state() -> AppState {
             publish_publisher_address: None,
             internal_auth_enabled: false,
             internal_auth_secret: None,
+            intent_gateway_base_url: "http://127.0.0.1:8080".to_string(),
+            compliance_adapter_base_url: "http://127.0.0.1:8082".to_string(),
+            policy_snapshot_base_url: "http://127.0.0.1:8083".to_string(),
         },
         None,
     )

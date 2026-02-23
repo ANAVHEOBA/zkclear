@@ -13,7 +13,8 @@ async fn bad_signature_should_be_rejected() {
     let mut ctx = build_test_context().await;
 
     let timestamp = unix_now();
-    let payload = encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":10}");
+    let payload =
+        encrypted_payload_b64(&ctx.decrypt_key_hex, "{\"asset\":\"ETH/USDC\",\"size\":10}");
     let nonce = format!("nonce-bad-signature-{}", Uuid::now_v7());
     let mut signature = sign_request(&ctx.signing_key, &payload, &nonce, timestamp);
     signature.replace_range(0..2, "ff");

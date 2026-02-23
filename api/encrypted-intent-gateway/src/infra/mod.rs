@@ -1,9 +1,9 @@
 use crate::config::db::{MongoConfig, RedisConfig};
+use mongodb::Client as MongoClient;
+use mongodb::Database;
 use mongodb::IndexModel;
 use mongodb::bson::doc;
 use mongodb::options::IndexOptions;
-use mongodb::Client as MongoClient;
-use mongodb::Database;
 use redis::Client as RedisClient;
 use redis::cmd;
 
@@ -20,8 +20,8 @@ pub async fn init_infra(mongo: &MongoConfig, redis: &RedisConfig) -> Result<Infr
     let mongo_db = mongo_client.database(&mongo.database);
     ensure_indexes(&mongo_db).await?;
 
-    let redis_client =
-        RedisClient::open(redis.url.clone()).map_err(|e| format!("redis client init failed: {e}"))?;
+    let redis_client = RedisClient::open(redis.url.clone())
+        .map_err(|e| format!("redis client init failed: {e}"))?;
     let mut conn = redis_client
         .get_multiplexed_async_connection()
         .await

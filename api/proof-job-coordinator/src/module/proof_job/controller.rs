@@ -2,7 +2,8 @@ use super::crud;
 use super::error::AppError;
 use super::schema::{
     GetProofJobResponse, GetProofJobsByRunResponse, HealthMetricsView, HealthResponse,
-    QueueStatsResponse, RetryProofJobResponse, SubmitProofJobRequest, SubmitProofJobResponse,
+    OtcIntentSubmitResult, QueueStatsResponse, RetryProofJobResponse, StartOtcOrchestrationRequest,
+    StartOtcOrchestrationResponse, SubmitProofJobRequest, SubmitProofJobResponse,
     UpdateProofJobStatusRequest, UpdateProofJobStatusResponse,
 };
 use crate::app::AppState;
@@ -15,6 +16,7 @@ use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use serde_json::json;
 use tracing::{error, info};
+use uuid::Uuid;
 
 pub async fn submit_proof_job(
     State(state): State<AppState>,
@@ -32,6 +34,270 @@ pub async fn submit_proof_job(
         }
         Err(err) => error_submit(err),
     }
+}
+
+pub async fn start_otc_orchestration(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<StartOtcOrchestrationRequest>,
+) -> impl IntoResponse {
+    if let Err(err) = verify_write_auth(&state, &headers, &req) {
+        return error_orchestration(err);
+    }
+    if req.intents.len() != 2 {
+        return error_orchestration(AppError::bad_request(
+            "INVALID_INTENT_COUNT",
+            "exactly two intents are required",
+        ));
+    }
+    if req.subjects.is_empty() {
+        return error_orchestration(AppError::bad_request(
+            "INVALID_SUBJECTS",
+            "at least one compliance subject is required",
+        ));
+    }
+
+    let workflow_run_id = format!("run-{}", Uuid::new_v4());
+    let client = reqwest::Client::new();
+    let mut intent_submissions = Vec::with_capacity(2);
+
+    for intent in &req.intents {
+        let response = match client
+            .post(format!(
+                "{}/v1/intents/submit",
+                state.config.intent_gateway_base_url.trim_end_matches('/')
+            ))
+            .header("content-type", "application/json")
+            .header("x-workflow-run-id", &workflow_run_id)
+            .json(intent)
+            .send()
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return error_orchestration(AppError::internal(
+                    "INTENT_GATEWAY_UNAVAILABLE",
+                    format!("intent submit failed: {e}"),
+                ));
+            }
+        };
+        let status = response.status();
+        let payload = match response.json::<serde_json::Value>().await {
+            Ok(v) => v,
+            Err(e) => {
+                return error_orchestration(AppError::internal(
+                    "INTENT_GATEWAY_DECODE_ERROR",
+                    e.to_string(),
+                ));
+            }
+        };
+
+        let submit = OtcIntentSubmitResult {
+            accepted: payload
+                .get("accepted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            workflow_run_id: payload
+                .get("workflow_run_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            intent_ids: payload
+                .get("intent_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(ToOwned::to_owned))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+            commitment_hashes: payload
+                .get("commitment_hashes")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(ToOwned::to_owned))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+            error_code: payload
+                .get("error_code")
+                .and_then(|v| v.as_str())
+                .map(ToOwned::to_owned),
+            reason: payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        };
+
+        if !status.is_success() || !submit.accepted {
+            return error_orchestration(AppError::internal(
+                "INTENT_SUBMIT_REJECTED",
+                format!(
+                    "intent submit rejected: status={} reason={} code={}",
+                    status.as_u16(),
+                    submit.reason,
+                    submit.error_code.clone().unwrap_or_default()
+                ),
+            ));
+        }
+
+        intent_submissions.push(submit);
+    }
+
+    let policy_resp = match client
+        .get(format!(
+            "{}/v1/policy/active",
+            state.config.policy_snapshot_base_url.trim_end_matches('/')
+        ))
+        .send()
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return error_orchestration(AppError::internal(
+                "POLICY_SERVICE_UNAVAILABLE",
+                format!("policy lookup failed: {e}"),
+            ));
+        }
+    };
+    let policy_json = match policy_resp.json::<serde_json::Value>().await {
+        Ok(v) => v,
+        Err(e) => {
+            return error_orchestration(AppError::internal(
+                "POLICY_SERVICE_DECODE_ERROR",
+                e.to_string(),
+            ));
+        }
+    };
+    let policy_version = policy_json
+        .get("active_mapping")
+        .and_then(|v| v.get("policy_version"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if policy_version.is_empty() {
+        return error_orchestration(AppError::internal(
+            "POLICY_NOT_ACTIVE",
+            "no active policy returned",
+        ));
+    }
+
+    let compliance_req = json!({
+        "workflow_run_id": workflow_run_id,
+        "request_id": req.request_id.unwrap_or_else(|| format!("req-{}", Uuid::new_v4())),
+        "nonce": req.compliance_nonce.unwrap_or_else(|| format!("nonce-{}", Uuid::new_v4())),
+        "timestamp": chrono::Utc::now().timestamp(),
+        "subjects": req.subjects
+    });
+    let compliance_resp = match client
+        .post(format!(
+            "{}/v1/compliance/intake",
+            state
+                .config
+                .compliance_adapter_base_url
+                .trim_end_matches('/')
+        ))
+        .header("content-type", "application/json")
+        .json(&compliance_req)
+        .send()
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return error_orchestration(AppError::internal(
+                "COMPLIANCE_SERVICE_UNAVAILABLE",
+                format!("compliance intake failed: {e}"),
+            ));
+        }
+    };
+    let compliance_json = match compliance_resp.json::<serde_json::Value>().await {
+        Ok(v) => v,
+        Err(e) => {
+            return error_orchestration(AppError::internal(
+                "COMPLIANCE_SERVICE_DECODE_ERROR",
+                e.to_string(),
+            ));
+        }
+    };
+    let compliance_accepted = compliance_json
+        .get("accepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !compliance_accepted {
+        return error_orchestration(AppError::internal(
+            "COMPLIANCE_REJECTED",
+            compliance_json
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("compliance rejected")
+                .to_string(),
+        ));
+    }
+
+    let attestation_id = compliance_json
+        .get("attestation_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let attestation_hash = compliance_json
+        .get("attestation_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if attestation_hash.is_empty() {
+        return error_orchestration(AppError::internal(
+            "COMPLIANCE_ATTESTATION_MISSING",
+            "attestation_hash missing from compliance response",
+        ));
+    }
+
+    let mut receipt_context = req.receipt_context.unwrap_or_else(|| json!({}));
+    if !receipt_context.is_object() {
+        receipt_context = json!({});
+    }
+    if receipt_context.get("receiptHash").is_none() && receipt_context.get("receipt_hash").is_none()
+    {
+        receipt_context["receiptHash"] = json!(attestation_hash.clone());
+    }
+    if receipt_context.get("binding").is_none() {
+        receipt_context["binding"] = json!({
+            "workflowRunId": workflow_run_id,
+            "policyVersion": policy_version,
+            "receiptHash": attestation_hash,
+            "domainSeparator": state.config.signal_domain_separator
+        });
+    }
+
+    let proof_req = SubmitProofJobRequest {
+        workflow_run_id: workflow_run_id.clone(),
+        policy_version: policy_version.clone(),
+        receipt_context,
+        proof_type: req.proof_type,
+        idempotency_key: req
+            .idempotency_key
+            .unwrap_or_else(|| format!("idem-{}", Uuid::new_v4())),
+    };
+    let proof_job = match crud::submit_proof_job(&state, proof_req).await {
+        Ok(v) => v,
+        Err(err) => return error_orchestration(err),
+    };
+
+    (
+        axum::http::StatusCode::OK,
+        Json(StartOtcOrchestrationResponse {
+            accepted: true,
+            workflow_run_id,
+            policy_version,
+            attestation_id,
+            attestation_hash,
+            intent_submissions,
+            proof_job: Some(proof_job),
+            error_code: None,
+            reason: "otc orchestration started".to_string(),
+        }),
+    )
 }
 
 pub async fn get_proof_job(
@@ -278,6 +544,26 @@ fn error_retry(err: AppError) -> (axum::http::StatusCode, Json<RetryProofJobResp
             accepted: false,
             job_id: String::new(),
             status: None,
+            error_code: Some(err.code.to_string()),
+            reason: err.message,
+        }),
+    )
+}
+
+fn error_orchestration(
+    err: AppError,
+) -> (axum::http::StatusCode, Json<StartOtcOrchestrationResponse>) {
+    error!(error_code = err.code, reason = %err.message, "otc orchestration rejected");
+    (
+        err.status,
+        Json(StartOtcOrchestrationResponse {
+            accepted: false,
+            workflow_run_id: String::new(),
+            policy_version: String::new(),
+            attestation_id: String::new(),
+            attestation_hash: String::new(),
+            intent_submissions: Vec::new(),
+            proof_job: None,
             error_code: Some(err.code.to_string()),
             reason: err.message,
         }),
