@@ -107,6 +107,11 @@ pub struct ProofJobView {
     pub policy_version: String,
     pub proof_type: String,
     pub status: JobStatus,
+    pub attempt_count: u64,
+    pub retry_count: u64,
+    pub retry_scheduled: bool,
+    pub queue_latency_ms: Option<u64>,
+    pub prove_duration_ms: Option<u64>,
     pub created_at: i64,
     pub updated_at: i64,
     pub last_error_code: Option<String>,
@@ -245,14 +250,67 @@ pub struct OtcIntentSubmitResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtcComplianceSubjectResult {
+    pub subject_id: String,
+    pub passed: bool,
+    pub decision: String,
+    pub reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartOtcOrchestrationResponse {
     pub accepted: bool,
     pub workflow_run_id: String,
     pub policy_version: String,
+    pub policy_hash: String,
     pub attestation_id: String,
     pub attestation_hash: String,
     pub intent_submissions: Vec<OtcIntentSubmitResult>,
+    pub compliance_results: Vec<OtcComplianceSubjectResult>,
     pub proof_job: Option<SubmitProofJobResponse>,
+    pub error_code: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletNonceRequest {
+    pub wallet_address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletNonceResponse {
+    pub accepted: bool,
+    pub wallet_address: String,
+    pub nonce: String,
+    pub message: String,
+    pub expires_at: i64,
+    pub error_code: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletVerifyRequest {
+    pub wallet_address: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletVerifyResponse {
+    pub accepted: bool,
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_at: i64,
+    pub wallet_address: String,
+    pub role: String,
+    pub error_code: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletMeResponse {
+    pub authenticated: bool,
+    pub wallet_address: String,
+    pub role: String,
     pub error_code: Option<String>,
     pub reason: String,
 }

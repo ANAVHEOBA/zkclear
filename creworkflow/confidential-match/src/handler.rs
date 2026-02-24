@@ -2,11 +2,13 @@ use sha2::{Digest, Sha256};
 
 use crate::errors::MatchError;
 use crate::models::{
-    ConfidentialMatchRequest, ConfidentialMatchResponse, MatchDecision, NormalizedIntent, PolicyCheckResult,
-    SettlementParams, Side,
+    ConfidentialMatchRequest, ConfidentialMatchResponse, MatchDecision, NormalizedIntent,
+    PolicyCheckResult, SettlementParams, Side,
 };
 
-pub fn process_confidential_match(req: ConfidentialMatchRequest) -> Result<ConfidentialMatchResponse, MatchError> {
+pub fn process_confidential_match(
+    req: ConfidentialMatchRequest,
+) -> Result<ConfidentialMatchResponse, MatchError> {
     validate_request_shape(&req)?;
     ensure_api_available(&req)?;
     ensure_policy_version(&req)?;
@@ -77,7 +79,9 @@ fn ensure_risk_and_compliance(req: &ConfidentialMatchRequest) -> Result<(), Matc
     Ok(())
 }
 
-fn select_pair(intents: &[NormalizedIntent]) -> Result<(&NormalizedIntent, &NormalizedIntent), MatchError> {
+fn select_pair(
+    intents: &[NormalizedIntent],
+) -> Result<(&NormalizedIntent, &NormalizedIntent), MatchError> {
     let first = &intents[0];
     let second = &intents[1];
 

@@ -1,7 +1,9 @@
 use crate::app::AppState;
 use crate::module::proof_job::model::{OnchainPublishRecord, ProofJobRecord};
+use ethers::abi::{Token, encode};
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::types::H256;
+use ethers::types::U256;
 use publish_receipt::chain::{ChainConfig, process_publish_receipt_onchain};
 use publish_receipt::models::{ChainValidationState, PublishReceiptRequest, SettlementStatus};
 use serde_json::Value;
@@ -52,8 +54,11 @@ pub async fn publish_receipt_on_sepolia(
 
     let policy_version = parse_policy_version(&job.policy_version)?;
     let public_signals = to_public_signal_strings(&artifacts.public_json)?;
-    let proof_hex = value_string(&job.receipt_context, &["proofHex", "proof_hex"])
-        .unwrap_or_else(|| "0x00".to_string());
+    let proof_hex = match value_string(&job.receipt_context, &["proofHex", "proof_hex"]) {
+        Some(v) => v,
+        None => encode_proof_hex_from_json(&artifacts.proof_json)
+            .map_err(|e| format!("proof hex encode failed: {e}"))?,
+    };
 
     let req = PublishReceiptRequest {
         settlement_registry: settlement_registry.clone(),
@@ -134,6 +139,72 @@ fn value_string(v: &Value, keys: &[&str]) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn encode_proof_hex_from_json(proof_json: &Value) -> Result<String, String> {
+    let p_a = proof_json
+        .get("pi_a")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "proof_json missing pi_a".to_string())?;
+    let p_b = proof_json
+        .get("pi_b")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "proof_json missing pi_b".to_string())?;
+    let p_c = proof_json
+        .get("pi_c")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "proof_json missing pi_c".to_string())?;
+    if p_a.len() < 2 || p_b.len() < 2 || p_c.len() < 2 {
+        return Err("proof_json has insufficient proof coordinates".to_string());
+    }
+
+    let p_b0 = p_b
+        .first()
+        .and_then(Value::as_array)
+        .ok_or_else(|| "proof_json pi_b[0] missing".to_string())?;
+    let p_b1 = p_b
+        .get(1)
+        .and_then(Value::as_array)
+        .ok_or_else(|| "proof_json pi_b[1] missing".to_string())?;
+    if p_b0.len() < 2 || p_b1.len() < 2 {
+        return Err("proof_json pi_b coordinates incomplete".to_string());
+    }
+
+    let a0 = parse_u256_value(&p_a[0])?;
+    let a1 = parse_u256_value(&p_a[1])?;
+    let b00 = parse_u256_value(&p_b0[1])?;
+    let b01 = parse_u256_value(&p_b0[0])?;
+    let b10 = parse_u256_value(&p_b1[1])?;
+    let b11 = parse_u256_value(&p_b1[0])?;
+    let c0 = parse_u256_value(&p_c[0])?;
+    let c1 = parse_u256_value(&p_c[1])?;
+
+    let bytes = encode(&[
+        Token::FixedArray(vec![Token::Uint(a0), Token::Uint(a1)]),
+        Token::FixedArray(vec![
+            Token::FixedArray(vec![Token::Uint(b00), Token::Uint(b01)]),
+            Token::FixedArray(vec![Token::Uint(b10), Token::Uint(b11)]),
+        ]),
+        Token::FixedArray(vec![Token::Uint(c0), Token::Uint(c1)]),
+    ]);
+
+    Ok(format!("0x{}", hex::encode(bytes)))
+}
+
+fn parse_u256_value(v: &Value) -> Result<U256, String> {
+    match v {
+        Value::String(s) => parse_u256_string(s),
+        Value::Number(n) => parse_u256_string(&n.to_string()),
+        _ => Err("proof coordinate must be string or number".to_string()),
+    }
+}
+
+fn parse_u256_string(s: &str) -> Result<U256, String> {
+    if let Some(hexv) = s.strip_prefix("0x") {
+        return U256::from_str_radix(hexv, 16)
+            .map_err(|e| format!("invalid hex proof coordinate `{s}`: {e}"));
+    }
+    U256::from_dec_str(s).map_err(|e| format!("invalid decimal proof coordinate `{s}`: {e}"))
 }
 
 async fn fetch_block_number(rpc_url: &str, tx_hash: &str) -> Option<u64> {

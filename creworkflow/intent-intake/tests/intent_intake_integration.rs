@@ -2,7 +2,8 @@ use base64::Engine;
 use intent_intake::errors::IntakeError;
 use intent_intake::handler::process_intake;
 use intent_intake::models::{
-    CounterpartyConstraints, DecryptedIntentPayload, EncryptedIntentEnvelope, IntentIntakeRequest, Side,
+    CounterpartyConstraints, DecryptedIntentPayload, EncryptedIntentEnvelope, IntentIntakeRequest,
+    Side,
 };
 use sha2::{Digest, Sha256};
 
@@ -22,7 +23,12 @@ fn sample_payload(nonce: &str, issued_at: u64, expiry: u64, side: Side) -> Decry
     }
 }
 
-fn make_envelope(intent_id: &str, signer: &str, submitted_at: u64, payload: &DecryptedIntentPayload) -> EncryptedIntentEnvelope {
+fn make_envelope(
+    intent_id: &str,
+    signer: &str,
+    submitted_at: u64,
+    payload: &DecryptedIntentPayload,
+) -> EncryptedIntentEnvelope {
     let canonical = serde_json::to_string(payload).expect("serialize payload");
     let mut hasher = Sha256::new();
     hasher.update(signer.as_bytes());

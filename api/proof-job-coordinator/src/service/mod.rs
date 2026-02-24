@@ -1,3 +1,4 @@
+pub mod binding_codec_service;
 pub mod hash_service;
 pub mod internal_auth_service;
 pub mod metrics_service;
@@ -7,4 +8,5 @@ pub mod queue_service;
 pub mod replay_service;
 pub mod signal_binding_service;
 pub mod validation_service;
+pub mod wallet_auth_service;
 pub mod workflow_service;

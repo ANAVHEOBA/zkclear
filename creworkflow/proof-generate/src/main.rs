@@ -17,8 +17,8 @@ fn run() -> Result<(), ProofError> {
         .read_to_string(&mut input)
         .map_err(|e| ProofError::InvalidRequest(format!("failed reading stdin: {e}")))?;
 
-    let request: ProofGenerateRequest =
-        serde_json::from_str(&input).map_err(|e| ProofError::InvalidRequest(format!("invalid json input: {e}")))?;
+    let request: ProofGenerateRequest = serde_json::from_str(&input)
+        .map_err(|e| ProofError::InvalidRequest(format!("invalid json input: {e}")))?;
 
     let response = process_proof_generate(request)?;
     let output = serde_json::to_string_pretty(&response)

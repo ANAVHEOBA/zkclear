@@ -19,6 +19,8 @@ redis = { version = "0.27", features = ["tokio-comp"] }
 publish-receipt = { path = "../../creworkflow/publish-receipt" }
 ethers = { version = "2", default-features = false, features = ["rustls"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "9"
+tower-http = { version = "0.6", features = ["cors"] }
 
 [dev-dependencies]
 http = "1"

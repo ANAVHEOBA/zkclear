@@ -5,6 +5,9 @@ use axum::routing::{get, post};
 
 pub fn register_routes(state: AppState) -> Router {
     Router::new()
+        .route("/v1/auth/wallet/nonce", post(controller::wallet_nonce))
+        .route("/v1/auth/wallet/verify", post(controller::wallet_verify))
+        .route("/v1/auth/wallet/me", get(controller::wallet_me))
         .route("/v1/proof-jobs", post(controller::submit_proof_job))
         .route(
             "/v1/orchestrations/otc",

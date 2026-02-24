@@ -74,6 +74,9 @@ Purpose:
 
 Current API:
 
+- `POST /v1/auth/wallet/nonce`
+- `POST /v1/auth/wallet/verify`
+- `GET /v1/auth/wallet/me`
 - `POST /v1/proof-jobs`
 - `GET /v1/proof-jobs/:job_id`
 - `GET /v1/proof-jobs/run/:workflow_run_id`
@@ -184,6 +187,15 @@ Internal auth:
 
 - `INTERNAL_AUTH_ENABLED`
 - `INTERNAL_AUTH_SECRET`
+
+Wallet auth:
+
+- `WALLET_AUTH_ENABLED`
+- `WALLET_AUTH_NONCE_TTL_SECONDS`
+- `WALLET_JWT_SECRET`
+- `WALLET_JWT_TTL_SECONDS`
+- `WALLET_ROLE_MAP`
+- `WALLET_DEFAULT_ROLE`
 
 ## Testing
 

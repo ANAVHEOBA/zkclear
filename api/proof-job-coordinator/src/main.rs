@@ -26,7 +26,15 @@ async fn main() {
         }
     };
 
-    info!(env = %config.rust_env, host = %config.api_host, port = config.api_port, "proof-job-coordinator started");
+    info!(
+        env = %config.rust_env,
+        host = %config.api_host,
+        port = config.api_port,
+        intent_gateway_base_url = %config.intent_gateway_base_url,
+        compliance_adapter_base_url = %config.compliance_adapter_base_url,
+        policy_snapshot_base_url = %config.policy_snapshot_base_url,
+        "proof-job-coordinator started"
+    );
 
     let infra = match init_infra(&config).await {
         Ok(i) => i,

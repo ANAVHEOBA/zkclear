@@ -25,6 +25,8 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
 
+const RETRY_ZSET_KEY: &str = "proofjobs:retry";
+
 #[derive(Debug, Default)]
 pub struct ProofJobStore {
     inner: Mutex<ProofJobStoreInner>,
@@ -151,18 +153,20 @@ pub async fn get_proof_job(
     job_id: &str,
 ) -> Result<GetProofJobResponse, AppError> {
     if let Some(job) = get_local_job(state, job_id)? {
+        let view = enrich_view(state, to_view(&job)).await?;
         return Ok(GetProofJobResponse {
             found: true,
-            job: Some(to_view(&job)),
+            job: Some(view),
             error_code: None,
             reason: "proof job found".to_string(),
         });
     }
     if let Some(job) = load_job_from_redis(state, job_id).await? {
         warm_job_in_memory(state, &job)?;
+        let view = enrich_view(state, to_view(&job)).await?;
         return Ok(GetProofJobResponse {
             found: true,
-            job: Some(to_view(&job)),
+            job: Some(view),
             error_code: None,
             reason: "proof job found".to_string(),
         });
@@ -214,7 +218,10 @@ pub async fn get_proof_jobs_by_run(
         }
     }
 
-    let mut jobs = by_id.into_values().map(|j| to_view(&j)).collect::<Vec<_>>();
+    let mut jobs = Vec::with_capacity(by_id.len());
+    for job in by_id.into_values() {
+        jobs.push(enrich_view(state, to_view(&job)).await?);
+    }
     jobs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     let found = !jobs.is_empty();
     Ok(GetProofJobsByRunResponse {
@@ -434,12 +441,23 @@ fn is_valid_transition(from: &JobStatus, to: &JobStatus) -> bool {
 }
 
 fn to_view(job: &ProofJobRecord) -> ProofJobView {
+    let queue_latency_ms = queue_latency_ms(&job.transitions);
+    let attempt_count = proving_attempt_count(&job.transitions);
+    let prove_duration_ms = job
+        .prover_artifacts
+        .as_ref()
+        .map(|a| a.prove_time_seconds.max(0) as u64 * 1000);
     ProofJobView {
         job_id: job.job_id.clone(),
         workflow_run_id: job.workflow_run_id.clone(),
         policy_version: job.policy_version.clone(),
         proof_type: job.proof_type.as_str().to_string(),
         status: job.status.clone(),
+        attempt_count,
+        retry_count: attempt_count.saturating_sub(1),
+        retry_scheduled: false,
+        queue_latency_ms,
+        prove_duration_ms,
         created_at: job.created_at,
         updated_at: job.updated_at,
         last_error_code: job.last_error_code.clone(),
@@ -464,6 +482,47 @@ fn to_view(job: &ProofJobRecord) -> ProofJobView {
         }),
         transitions: job.transitions.clone(),
     }
+}
+
+async fn enrich_view(state: &AppState, mut view: ProofJobView) -> Result<ProofJobView, AppError> {
+    if let Some(infra) = &state.infra {
+        let mut conn = infra
+            .redis
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| AppError::internal("REDIS_CONNECT_FAILED", e.to_string()))?;
+
+        let retry_score: Option<i64> = redis::cmd("ZSCORE")
+            .arg(RETRY_ZSET_KEY)
+            .arg(&view.job_id)
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| AppError::internal("REDIS_QUERY_FAILED", e.to_string()))?;
+        view.retry_scheduled = retry_score.is_some();
+    }
+    Ok(view)
+}
+
+fn queue_latency_ms(transitions: &[JobStatusTransition]) -> Option<u64> {
+    let queued_at = transitions
+        .iter()
+        .find(|t| t.to_status == JobStatus::Queued)
+        .map(|t| t.transitioned_at)?;
+    let proving_at = transitions
+        .iter()
+        .find(|t| t.to_status == JobStatus::Proving)
+        .map(|t| t.transitioned_at)?;
+    if proving_at < queued_at {
+        return Some(0);
+    }
+    Some((proving_at - queued_at) as u64 * 1000)
+}
+
+fn proving_attempt_count(transitions: &[JobStatusTransition]) -> u64 {
+    transitions
+        .iter()
+        .filter(|t| t.to_status == JobStatus::Proving)
+        .count() as u64
 }
 
 fn lock_store(store: &ProofJobStore) -> Result<MutexGuard<'_, ProofJobStoreInner>, AppError> {

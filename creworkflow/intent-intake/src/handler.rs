@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::errors::IntakeError;
 use crate::models::{
-    DecryptedIntentPayload, EncryptedIntentEnvelope, IntentIntakeRequest, IntentIntakeResponse, NormalizedIntent,
+    DecryptedIntentPayload, EncryptedIntentEnvelope, IntentIntakeRequest, IntentIntakeResponse,
+    NormalizedIntent,
 };
 
 pub fn process_intake(req: IntentIntakeRequest) -> Result<IntentIntakeResponse, IntakeError> {
@@ -54,7 +55,9 @@ pub fn process_intake(req: IntentIntakeRequest) -> Result<IntentIntakeResponse, 
     })
 }
 
-fn decrypt_payload(envelope: &EncryptedIntentEnvelope) -> Result<DecryptedIntentPayload, IntakeError> {
+fn decrypt_payload(
+    envelope: &EncryptedIntentEnvelope,
+) -> Result<DecryptedIntentPayload, IntakeError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(&envelope.ciphertext_b64)
         .map_err(|e| IntakeError::MalformedPayload {
@@ -62,9 +65,11 @@ fn decrypt_payload(envelope: &EncryptedIntentEnvelope) -> Result<DecryptedIntent
             reason: format!("base64 decode failed: {e}"),
         })?;
 
-    serde_json::from_slice::<DecryptedIntentPayload>(&decoded).map_err(|e| IntakeError::MalformedPayload {
-        intent_id: envelope.intent_id.clone(),
-        reason: format!("json decode failed: {e}"),
+    serde_json::from_slice::<DecryptedIntentPayload>(&decoded).map_err(|e| {
+        IntakeError::MalformedPayload {
+            intent_id: envelope.intent_id.clone(),
+            reason: format!("json decode failed: {e}"),
+        }
     })
 }
 
@@ -105,7 +110,10 @@ fn validate_payload(
     Ok(())
 }
 
-fn verify_signature(envelope: &EncryptedIntentEnvelope, payload: &DecryptedIntentPayload) -> Result<bool, IntakeError> {
+fn verify_signature(
+    envelope: &EncryptedIntentEnvelope,
+    payload: &DecryptedIntentPayload,
+) -> Result<bool, IntakeError> {
     let canonical = serde_json::to_string(payload).map_err(|e| IntakeError::MalformedPayload {
         intent_id: envelope.intent_id.clone(),
         reason: format!("canonical serialization failed: {e}"),
@@ -120,9 +128,9 @@ fn verify_signature(envelope: &EncryptedIntentEnvelope, payload: &DecryptedInten
 }
 
 fn compute_intent_commitment(intent: &NormalizedIntent) -> Result<String, IntakeError> {
-    let canonical = serde_json::to_string(intent).map_err(|e| IntakeError::InvalidRequest(format!(
-        "commitment serialization failed: {e}"
-    )))?;
+    let canonical = serde_json::to_string(intent).map_err(|e| {
+        IntakeError::InvalidRequest(format!("commitment serialization failed: {e}"))
+    })?;
     let digest = Sha256::digest(canonical.as_bytes());
     Ok(format!("0x{}", hex::encode(digest)))
 }

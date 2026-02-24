@@ -19,11 +19,12 @@ fn run() -> Result<(), PublishError> {
         .read_to_string(&mut input)
         .map_err(|e| PublishError::InvalidRequest(format!("failed reading stdin: {e}")))?;
 
-    let request: PublishReceiptRequest =
-        serde_json::from_str(&input).map_err(|e| PublishError::InvalidRequest(format!("invalid json input: {e}")))?;
+    let request: PublishReceiptRequest = serde_json::from_str(&input)
+        .map_err(|e| PublishError::InvalidRequest(format!("invalid json input: {e}")))?;
 
     let response = if let Some(cfg) = read_chain_config()? {
-        let rt = Runtime::new().map_err(|e| PublishError::Onchain(format!("runtime init failed: {e}")))?;
+        let rt = Runtime::new()
+            .map_err(|e| PublishError::Onchain(format!("runtime init failed: {e}")))?;
         rt.block_on(process_publish_receipt_onchain(request, cfg))?
     } else {
         process_publish_receipt(request)?
@@ -53,7 +54,8 @@ fn read_chain_config() -> Result<Option<ChainConfig>, PublishError> {
         }
         (None, None) => Ok(None),
         _ => Err(PublishError::MissingEnv(
-            "set both ETH_SEPOLIA_RPC_URL and PRIVATE_KEY, or set neither for simulation mode".to_string(),
+            "set both ETH_SEPOLIA_RPC_URL and PRIVATE_KEY, or set neither for simulation mode"
+                .to_string(),
         )),
     }
 }

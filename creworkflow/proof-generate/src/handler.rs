@@ -13,7 +13,9 @@ use sha2::{Digest, Sha256};
 use crate::errors::ProofError;
 use crate::models::{ProofGenerateRequest, ProofGenerateResponse};
 
-pub fn process_proof_generate(req: ProofGenerateRequest) -> Result<ProofGenerateResponse, ProofError> {
+pub fn process_proof_generate(
+    req: ProofGenerateRequest,
+) -> Result<ProofGenerateResponse, ProofError> {
     validate_input(&req)?;
     enforce_timeout(&req)?;
     enforce_constraints(&req)?;
@@ -53,32 +55,58 @@ pub fn process_proof_generate(req: ProofGenerateRequest) -> Result<ProofGenerate
     let artifacts = resolve_artifacts()?;
     let run_id = unique_run_id();
     let tmp_dir = env::temp_dir().join("zkclear-proof-generate");
-    fs::create_dir_all(&tmp_dir)
-        .map_err(|e| ProofError::Artifact(format!("failed to create temp dir `{}`: {e}", tmp_dir.display())))?;
+    fs::create_dir_all(&tmp_dir).map_err(|e| {
+        ProofError::Artifact(format!(
+            "failed to create temp dir `{}`: {e}",
+            tmp_dir.display()
+        ))
+    })?;
 
     let input_file = tmp_dir.join(format!("input-{run_id}.json"));
     let wtns_file = tmp_dir.join(format!("witness-{run_id}.wtns"));
     let proof_file = tmp_dir.join(format!("proof-{run_id}.json"));
     let public_file = tmp_dir.join(format!("public-{run_id}.json"));
 
-    fs::write(&input_file, serde_json::to_vec_pretty(&circuit_input).map_err(|e| ProofError::Artifact(e.to_string()))?)
-        .map_err(|e| ProofError::Artifact(format!("failed to write `{}`: {e}", input_file.display())))?;
+    fs::write(
+        &input_file,
+        serde_json::to_vec_pretty(&circuit_input)
+            .map_err(|e| ProofError::Artifact(e.to_string()))?,
+    )
+    .map_err(|e| {
+        ProofError::Artifact(format!("failed to write `{}`: {e}", input_file.display()))
+    })?;
 
     run_snarkjs(&[
         "wtns",
         "calculate",
-        artifacts.wasm.to_str().ok_or_else(|| ProofError::Artifact("invalid wasm path".to_string()))?,
-        input_file.to_str().ok_or_else(|| ProofError::Artifact("invalid input path".to_string()))?,
-        wtns_file.to_str().ok_or_else(|| ProofError::Artifact("invalid wtns path".to_string()))?,
+        artifacts
+            .wasm
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid wasm path".to_string()))?,
+        input_file
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid input path".to_string()))?,
+        wtns_file
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid wtns path".to_string()))?,
     ])?;
 
     run_snarkjs(&[
         "groth16",
         "prove",
-        artifacts.zkey.to_str().ok_or_else(|| ProofError::Artifact("invalid zkey path".to_string()))?,
-        wtns_file.to_str().ok_or_else(|| ProofError::Artifact("invalid wtns path".to_string()))?,
-        proof_file.to_str().ok_or_else(|| ProofError::Artifact("invalid proof path".to_string()))?,
-        public_file.to_str().ok_or_else(|| ProofError::Artifact("invalid public path".to_string()))?,
+        artifacts
+            .zkey
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid zkey path".to_string()))?,
+        wtns_file
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid wtns path".to_string()))?,
+        proof_file
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid proof path".to_string()))?,
+        public_file
+            .to_str()
+            .ok_or_else(|| ProofError::Artifact("invalid public path".to_string()))?,
     ])?;
 
     let proof_json: SnarkProof = read_json(&proof_file)?;
@@ -96,7 +124,10 @@ pub fn process_proof_generate(req: ProofGenerateRequest) -> Result<ProofGenerate
         domain_separator_public.to_string(),
         workflow_run_id_public.to_string(),
         binding_hash_public.to_string(),
-        circuit_input["notional_public"].as_str().unwrap_or("0").to_string(),
+        circuit_input["notional_public"]
+            .as_str()
+            .unwrap_or("0")
+            .to_string(),
     ];
 
     for (idx, expected) in expected_signals.iter().enumerate() {
@@ -123,13 +154,19 @@ pub fn process_proof_generate(req: ProofGenerateRequest) -> Result<ProofGenerate
 
 fn validate_input(req: &ProofGenerateRequest) -> Result<(), ProofError> {
     if req.workflow_run_id.trim().is_empty() {
-        return Err(ProofError::InvalidRequest("workflow_run_id cannot be empty".to_string()));
+        return Err(ProofError::InvalidRequest(
+            "workflow_run_id cannot be empty".to_string(),
+        ));
     }
     if req.domain_separator.trim().is_empty() {
-        return Err(ProofError::InvalidRequest("domain_separator cannot be empty".to_string()));
+        return Err(ProofError::InvalidRequest(
+            "domain_separator cannot be empty".to_string(),
+        ));
     }
     if req.witness_seed.trim().is_empty() {
-        return Err(ProofError::WitnessGenerationFailure("witness_seed missing".to_string()));
+        return Err(ProofError::WitnessGenerationFailure(
+            "witness_seed missing".to_string(),
+        ));
     }
     Ok(())
 }
@@ -146,13 +183,19 @@ fn enforce_timeout(req: &ProofGenerateRequest) -> Result<(), ProofError> {
 
 fn enforce_constraints(req: &ProofGenerateRequest) -> Result<(), ProofError> {
     if !req.match_result.accepted {
-        return Err(ProofError::CircuitConstraintFailure("match result not accepted".to_string()));
+        return Err(ProofError::CircuitConstraintFailure(
+            "match result not accepted".to_string(),
+        ));
     }
     if !req.policy_result.passed {
-        return Err(ProofError::CircuitConstraintFailure("policy result not passed".to_string()));
+        return Err(ProofError::CircuitConstraintFailure(
+            "policy result not passed".to_string(),
+        ));
     }
     if req.policy_result.policy_version == 0 {
-        return Err(ProofError::CircuitConstraintFailure("policy version must be non-zero".to_string()));
+        return Err(ProofError::CircuitConstraintFailure(
+            "policy version must be non-zero".to_string(),
+        ));
     }
     if req.settlement_params.execution_size <= 0.0 || req.settlement_params.execution_price <= 0.0 {
         return Err(ProofError::CircuitConstraintFailure(
@@ -160,7 +203,8 @@ fn enforce_constraints(req: &ProofGenerateRequest) -> Result<(), ProofError> {
         ));
     }
 
-    let computed_notional = req.settlement_params.execution_size * req.settlement_params.execution_price;
+    let computed_notional =
+        req.settlement_params.execution_size * req.settlement_params.execution_price;
     let delta = (computed_notional - req.settlement_params.notional).abs();
     if delta > 1e-8 {
         return Err(ProofError::CircuitConstraintFailure(
@@ -252,7 +296,8 @@ fn resolve_snarkjs_bin() -> String {
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, ProofError> {
     let raw = fs::read_to_string(path)
         .map_err(|e| ProofError::Artifact(format!("failed to read `{}`: {e}", path.display())))?;
-    serde_json::from_str(&raw).map_err(|e| ProofError::Artifact(format!("invalid json `{}`: {e}", path.display())))
+    serde_json::from_str(&raw)
+        .map_err(|e| ProofError::Artifact(format!("invalid json `{}`: {e}", path.display())))
 }
 
 fn hash_hex(parts: &[&[u8]]) -> String {
@@ -289,16 +334,26 @@ fn unique_run_id() -> String {
 
 fn encode_proof_bytes(proof: &SnarkProof) -> Result<Vec<u8>, ProofError> {
     if proof.pi_a.len() < 2 || proof.pi_b.len() < 2 || proof.pi_c.len() < 2 {
-        return Err(ProofError::Artifact("proof json missing coordinates".to_string()));
+        return Err(ProofError::Artifact(
+            "proof json missing coordinates".to_string(),
+        ));
     }
     if proof.pi_b[0].len() < 2 || proof.pi_b[1].len() < 2 {
-        return Err(ProofError::Artifact("proof json missing pi_b coordinates".to_string()));
+        return Err(ProofError::Artifact(
+            "proof json missing pi_b coordinates".to_string(),
+        ));
     }
 
     let p_a = vec![parse_u256(&proof.pi_a[0])?, parse_u256(&proof.pi_a[1])?];
     let p_b = vec![
-        vec![parse_u256(&proof.pi_b[0][1])?, parse_u256(&proof.pi_b[0][0])?],
-        vec![parse_u256(&proof.pi_b[1][1])?, parse_u256(&proof.pi_b[1][0])?],
+        vec![
+            parse_u256(&proof.pi_b[0][1])?,
+            parse_u256(&proof.pi_b[0][0])?,
+        ],
+        vec![
+            parse_u256(&proof.pi_b[1][1])?,
+            parse_u256(&proof.pi_b[1][0])?,
+        ],
     ];
     let p_c = vec![parse_u256(&proof.pi_c[0])?, parse_u256(&proof.pi_c[1])?];
 
@@ -317,7 +372,8 @@ fn parse_u256(s: &str) -> Result<U256, ProofError> {
         return U256::from_str_radix(hex, 16)
             .map_err(|e| ProofError::Artifact(format!("invalid hex u256 `{s}`: {e}")));
     }
-    U256::from_dec_str(s).map_err(|e| ProofError::Artifact(format!("invalid decimal u256 `{s}`: {e}")))
+    U256::from_dec_str(s)
+        .map_err(|e| ProofError::Artifact(format!("invalid decimal u256 `{s}`: {e}")))
 }
 
 struct ArtifactPaths {
@@ -331,10 +387,16 @@ fn resolve_artifacts() -> Result<ArtifactPaths, ProofError> {
     let wasm = root.join("artifacts/settlement_valid/settlement_valid_js/settlement_valid.wasm");
     let zkey = root.join("artifacts/settlement_valid/settlement_valid.zkey");
     if !wasm.exists() {
-        return Err(ProofError::Artifact(format!("missing wasm artifact `{}`", wasm.display())));
+        return Err(ProofError::Artifact(format!(
+            "missing wasm artifact `{}`",
+            wasm.display()
+        )));
     }
     if !zkey.exists() {
-        return Err(ProofError::Artifact(format!("missing zkey artifact `{}`", zkey.display())));
+        return Err(ProofError::Artifact(format!(
+            "missing zkey artifact `{}`",
+            zkey.display()
+        )));
     }
     Ok(ArtifactPaths { wasm, zkey })
 }

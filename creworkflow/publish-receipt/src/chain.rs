@@ -115,7 +115,11 @@ pub async fn process_publish_receipt_onchain(
     let onchain_receipt_event_id = if receipt.logs.is_empty() {
         format!("{:#x}:0", tx_hash)
     } else {
-        format!("{:#x}:{}", tx_hash, receipt.logs[0].log_index.unwrap_or_default())
+        format!(
+            "{:#x}:{}",
+            tx_hash,
+            receipt.logs[0].log_index.unwrap_or_default()
+        )
     };
 
     let stored_receipt_record = StoredReceiptRecord {
@@ -153,11 +157,13 @@ fn parse_public_signals(signals: &[String]) -> Result<Vec<U256>, PublishError> {
     let mut out = Vec::with_capacity(signals.len());
     for s in signals {
         let value = if let Some(hexv) = s.strip_prefix("0x") {
-            U256::from_str_radix(hexv, 16)
-                .map_err(|e| PublishError::Onchain(format!("invalid hex public signal `{s}`: {e}")))?
+            U256::from_str_radix(hexv, 16).map_err(|e| {
+                PublishError::Onchain(format!("invalid hex public signal `{s}`: {e}"))
+            })?
         } else {
-            U256::from_dec_str(s)
-                .map_err(|e| PublishError::Onchain(format!("invalid decimal public signal `{s}`: {e}")))?
+            U256::from_dec_str(s).map_err(|e| {
+                PublishError::Onchain(format!("invalid decimal public signal `{s}`: {e}"))
+            })?
         };
         out.push(value);
     }

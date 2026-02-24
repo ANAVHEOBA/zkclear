@@ -27,6 +27,12 @@ pub struct AppConfig {
     pub publish_publisher_address: Option<String>,
     pub internal_auth_enabled: bool,
     pub internal_auth_secret: Option<String>,
+    pub wallet_auth_enabled: bool,
+    pub wallet_auth_nonce_ttl_seconds: i64,
+    pub wallet_jwt_secret: Option<String>,
+    pub wallet_jwt_ttl_seconds: i64,
+    pub wallet_role_map: String,
+    pub wallet_default_role: String,
     pub intent_gateway_base_url: String,
     pub compliance_adapter_base_url: String,
     pub policy_snapshot_base_url: String,
@@ -69,6 +75,12 @@ impl AppConfig {
             publish_publisher_address: env::var("PUBLISH_PUBLISHER_ADDRESS").ok(),
             internal_auth_enabled: read_optional_bool("INTERNAL_AUTH_ENABLED", false),
             internal_auth_secret: env::var("INTERNAL_AUTH_SECRET").ok(),
+            wallet_auth_enabled: read_optional_bool("WALLET_AUTH_ENABLED", true),
+            wallet_auth_nonce_ttl_seconds: read_optional_i64("WALLET_AUTH_NONCE_TTL_SECONDS", 300)?,
+            wallet_jwt_secret: env::var("WALLET_JWT_SECRET").ok(),
+            wallet_jwt_ttl_seconds: read_optional_i64("WALLET_JWT_TTL_SECONDS", 3600)?,
+            wallet_role_map: read_optional_string("WALLET_ROLE_MAP", ""),
+            wallet_default_role: read_optional_string("WALLET_DEFAULT_ROLE", "dealer"),
             intent_gateway_base_url: read_optional_string(
                 "INTENT_GATEWAY_BASE_URL",
                 "http://127.0.0.1:8080",
@@ -116,6 +128,6 @@ fn read_optional_string(key: &str, default: &str) -> String {
 
 fn load_dotenv_layers() {
     for path in [".env", "../.env", "../../.env"] {
-        let _ = dotenvy::from_path(path);
+        let _ = dotenvy::from_path_override(path);
     }
 }

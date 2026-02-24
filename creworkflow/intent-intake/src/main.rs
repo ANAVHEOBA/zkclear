@@ -17,8 +17,8 @@ fn run() -> Result<(), IntakeError> {
         .read_to_string(&mut input)
         .map_err(|e| IntakeError::InvalidRequest(format!("failed reading stdin: {e}")))?;
 
-    let request: IntentIntakeRequest =
-        serde_json::from_str(&input).map_err(|e| IntakeError::InvalidRequest(format!("invalid json input: {e}")))?;
+    let request: IntentIntakeRequest = serde_json::from_str(&input)
+        .map_err(|e| IntakeError::InvalidRequest(format!("invalid json input: {e}")))?;
 
     let response = process_intake(request)?;
     let output = serde_json::to_string_pretty(&response)

@@ -17,8 +17,8 @@ fn run() -> Result<(), SettleError> {
         .read_to_string(&mut input)
         .map_err(|e| SettleError::InvalidRequest(format!("failed reading stdin: {e}")))?;
 
-    let request: SettlePrivateRequest =
-        serde_json::from_str(&input).map_err(|e| SettleError::InvalidRequest(format!("invalid json input: {e}")))?;
+    let request: SettlePrivateRequest = serde_json::from_str(&input)
+        .map_err(|e| SettleError::InvalidRequest(format!("invalid json input: {e}")))?;
 
     let response = process_settle_private(request)?;
     let output = serde_json::to_string_pretty(&response)

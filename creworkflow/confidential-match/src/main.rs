@@ -17,8 +17,8 @@ fn run() -> Result<(), MatchError> {
         .read_to_string(&mut input)
         .map_err(|e| MatchError::InvalidRequest(format!("failed reading stdin: {e}")))?;
 
-    let request: ConfidentialMatchRequest =
-        serde_json::from_str(&input).map_err(|e| MatchError::InvalidRequest(format!("invalid json input: {e}")))?;
+    let request: ConfidentialMatchRequest = serde_json::from_str(&input)
+        .map_err(|e| MatchError::InvalidRequest(format!("invalid json input: {e}")))?;
 
     let response = process_confidential_match(request)?;
     let output = serde_json::to_string_pretty(&response)

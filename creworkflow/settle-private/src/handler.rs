@@ -3,7 +3,9 @@ use sha2::{Digest, Sha256};
 use crate::errors::SettleError;
 use crate::models::{SettlePrivateRequest, SettlePrivateResponse, SettlementStatus};
 
-pub fn process_settle_private(req: SettlePrivateRequest) -> Result<SettlePrivateResponse, SettleError> {
+pub fn process_settle_private(
+    req: SettlePrivateRequest,
+) -> Result<SettlePrivateResponse, SettleError> {
     validate_request(&req)?;
 
     if req.settlement_instruction.counterparty_conflict {
@@ -71,7 +73,9 @@ fn validate_request(req: &SettlePrivateRequest) -> Result<(), SettleError> {
             "proof bundle not approved".to_string(),
         ));
     }
-    if req.proof_bundle.proof_hash.trim().is_empty() || req.proof_bundle.receipt_hash.trim().is_empty() {
+    if req.proof_bundle.proof_hash.trim().is_empty()
+        || req.proof_bundle.receipt_hash.trim().is_empty()
+    {
         return Err(SettleError::InvalidRequest(
             "proof_hash and receipt_hash are required".to_string(),
         ));

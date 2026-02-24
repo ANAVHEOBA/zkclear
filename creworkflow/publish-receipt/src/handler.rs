@@ -3,7 +3,9 @@ use sha2::{Digest, Sha256};
 use crate::errors::PublishError;
 use crate::models::{PublishReceiptRequest, PublishReceiptResponse, StoredReceiptRecord};
 
-pub fn process_publish_receipt(req: PublishReceiptRequest) -> Result<PublishReceiptResponse, PublishError> {
+pub fn process_publish_receipt(
+    req: PublishReceiptRequest,
+) -> Result<PublishReceiptResponse, PublishError> {
     validate_shape(&req)?;
     enforce_contract_checks(&req)?;
 

@@ -2,14 +2,20 @@ use super::crud;
 use super::error::AppError;
 use super::schema::{
     GetProofJobResponse, GetProofJobsByRunResponse, HealthMetricsView, HealthResponse,
-    OtcIntentSubmitResult, QueueStatsResponse, RetryProofJobResponse, StartOtcOrchestrationRequest,
-    StartOtcOrchestrationResponse, SubmitProofJobRequest, SubmitProofJobResponse,
-    UpdateProofJobStatusRequest, UpdateProofJobStatusResponse,
+    OtcComplianceSubjectResult, OtcIntentSubmitResult, QueueStatsResponse, RetryProofJobResponse,
+    StartOtcOrchestrationRequest, StartOtcOrchestrationResponse, SubmitProofJobRequest,
+    SubmitProofJobResponse,
+    UpdateProofJobStatusRequest, UpdateProofJobStatusResponse, WalletMeResponse,
+    WalletNonceRequest, WalletNonceResponse, WalletVerifyRequest, WalletVerifyResponse,
 };
 use crate::app::AppState;
 use crate::service::internal_auth_service::verify_internal_signature;
 use crate::service::metrics_service;
 use crate::service::queue_service;
+use crate::service::wallet_auth_service::{
+    WalletClaims, build_login_message, issue_access_token, normalize_wallet_address,
+    resolve_wallet_role, verify_access_token, verify_personal_sign,
+};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
@@ -17,6 +23,183 @@ use axum::response::IntoResponse;
 use serde_json::json;
 use tracing::{error, info};
 use uuid::Uuid;
+
+pub async fn wallet_nonce(
+    State(state): State<AppState>,
+    Json(req): Json<WalletNonceRequest>,
+) -> impl IntoResponse {
+    if !state.config.wallet_auth_enabled {
+        return error_wallet_nonce(AppError::bad_request(
+            "WALLET_AUTH_DISABLED",
+            "wallet auth is disabled",
+        ));
+    }
+    let wallet = match normalize_wallet_address(&req.wallet_address) {
+        Ok(v) => v,
+        Err(e) => return error_wallet_nonce(AppError::bad_request("INVALID_WALLET", e)),
+    };
+    if state.config.wallet_auth_nonce_ttl_seconds <= 0 {
+        return error_wallet_nonce(AppError::internal(
+            "AUTH_CONFIG_ERROR",
+            "WALLET_AUTH_NONCE_TTL_SECONDS must be positive",
+        ));
+    }
+
+    let now = chrono::Utc::now().timestamp();
+    let expires_at = now
+        .checked_add(state.config.wallet_auth_nonce_ttl_seconds)
+        .unwrap_or(now);
+    let nonce = Uuid::new_v4().simple().to_string();
+    let message = build_login_message(&wallet, &nonce, now, state.config.eth_sepolia_chain_id);
+
+    {
+        let mut guard = state.wallet_nonces.write().await;
+        guard.retain(|_, challenge| challenge.expires_at >= now);
+        guard.insert(
+            wallet.clone(),
+            crate::app::WalletNonceChallenge {
+                nonce: nonce.clone(),
+                message: message.clone(),
+                expires_at,
+            },
+        );
+    }
+
+    (
+        axum::http::StatusCode::OK,
+        Json(WalletNonceResponse {
+            accepted: true,
+            wallet_address: wallet,
+            nonce,
+            message,
+            expires_at,
+            error_code: None,
+            reason: "nonce issued".to_string(),
+        }),
+    )
+}
+
+pub async fn wallet_verify(
+    State(state): State<AppState>,
+    Json(req): Json<WalletVerifyRequest>,
+) -> impl IntoResponse {
+    if !state.config.wallet_auth_enabled {
+        return error_wallet_verify(AppError::bad_request(
+            "WALLET_AUTH_DISABLED",
+            "wallet auth is disabled",
+        ));
+    }
+    let wallet = match normalize_wallet_address(&req.wallet_address) {
+        Ok(v) => v,
+        Err(e) => return error_wallet_verify(AppError::bad_request("INVALID_WALLET", e)),
+    };
+
+    let challenge = {
+        let mut guard = state.wallet_nonces.write().await;
+        let now = chrono::Utc::now().timestamp();
+        guard.retain(|_, c| c.expires_at >= now);
+        guard.remove(&wallet)
+    };
+    let challenge = match challenge {
+        Some(v) => v,
+        None => {
+            return error_wallet_verify(AppError::bad_request(
+                "NONCE_NOT_FOUND",
+                "wallet nonce not found or expired",
+            ));
+        }
+    };
+
+    let recovered = match verify_personal_sign(&challenge.message, &req.signature) {
+        Ok(v) => v,
+        Err(e) => return error_wallet_verify(AppError::unauthorized("BAD_SIGNATURE", e)),
+    };
+    if recovered != wallet {
+        return error_wallet_verify(AppError::unauthorized(
+            "SIGNER_MISMATCH",
+            "signature signer does not match wallet_address",
+        ));
+    }
+    let role = resolve_wallet_role(
+        &wallet,
+        &state.config.wallet_role_map,
+        &state.config.wallet_default_role,
+    );
+    let jwt_secret = match state.config.wallet_jwt_secret.as_deref() {
+        Some(v) if !v.trim().is_empty() => v,
+        _ => {
+            return error_wallet_verify(AppError::internal(
+                "AUTH_CONFIG_ERROR",
+                "WALLET_JWT_SECRET is required for wallet auth",
+            ));
+        }
+    };
+    let (token, expires_at) = match issue_access_token(
+        &wallet,
+        &role,
+        jwt_secret,
+        state.config.wallet_jwt_ttl_seconds,
+    ) {
+        Ok(v) => v,
+        Err(e) => return error_wallet_verify(AppError::internal("TOKEN_ISSUE_ERROR", e)),
+    };
+    info!(
+        wallet_address = %wallet,
+        role = %role,
+        nonce = %challenge.nonce,
+        "wallet login successful"
+    );
+    (
+        axum::http::StatusCode::OK,
+        Json(WalletVerifyResponse {
+            accepted: true,
+            access_token: token,
+            token_type: "Bearer".to_string(),
+            expires_at,
+            wallet_address: wallet,
+            role,
+            error_code: None,
+            reason: "wallet authenticated".to_string(),
+        }),
+    )
+}
+
+pub async fn wallet_me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !state.config.wallet_auth_enabled {
+        return (
+            axum::http::StatusCode::OK,
+            Json(WalletMeResponse {
+                authenticated: false,
+                wallet_address: String::new(),
+                role: String::new(),
+                error_code: Some("WALLET_AUTH_DISABLED".to_string()),
+                reason: "wallet auth is disabled".to_string(),
+            }),
+        );
+    }
+    match verify_wallet_bearer_claims(&state, &headers) {
+        Ok(claims) => (
+            axum::http::StatusCode::OK,
+            Json(WalletMeResponse {
+                authenticated: true,
+                wallet_address: claims.sub,
+                role: claims.role,
+                error_code: None,
+                reason: "authenticated".to_string(),
+            }),
+        ),
+        Err(err) => (
+            err.status,
+            Json(WalletMeResponse {
+                authenticated: false,
+                wallet_address: String::new(),
+                role: String::new(),
+                error_code: Some(err.code.to_string()),
+                reason: err.message,
+            }),
+        ),
+    }
+}
 
 pub async fn submit_proof_job(
     State(state): State<AppState>,
@@ -82,12 +265,26 @@ pub async fn start_otc_orchestration(
             }
         };
         let status = response.status();
-        let payload = match response.json::<serde_json::Value>().await {
+        let raw = match response.text().await {
             Ok(v) => v,
             Err(e) => {
                 return error_orchestration(AppError::internal(
                     "INTENT_GATEWAY_DECODE_ERROR",
-                    e.to_string(),
+                    format!("failed reading intent gateway body: {e}"),
+                ));
+            }
+        };
+        let payload = match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(v) => v,
+            Err(e) => {
+                return error_orchestration(AppError::internal(
+                    "INTENT_GATEWAY_DECODE_ERROR",
+                    format!(
+                        "non-json from intent gateway status={} body={} parse_err={}",
+                        status.as_u16(),
+                        raw,
+                        e
+                    ),
                 ));
             }
         };
@@ -177,6 +374,13 @@ pub async fn start_otc_orchestration(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
+    let policy_hash = policy_json
+        .get("active_mapping")
+        .and_then(|v| v.get("policy_hash"))
+        .or_else(|| policy_json.get("snapshot").and_then(|v| v.get("policy_hash")))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     if policy_version.is_empty() {
         return error_orchestration(AppError::internal(
             "POLICY_NOT_ACTIVE",
@@ -225,15 +429,53 @@ pub async fn start_otc_orchestration(
         .get("accepted")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    if !compliance_accepted {
-        return error_orchestration(AppError::internal(
-            "COMPLIANCE_REJECTED",
-            compliance_json
-                .get("reason")
-                .and_then(|v| v.as_str())
-                .unwrap_or("compliance rejected")
-                .to_string(),
-        ));
+    let compliance_decision = compliance_json
+        .get("decision")
+        .and_then(|v| v.as_str())
+        .unwrap_or("FAIL")
+        .to_string();
+    let compliance_reason = compliance_json
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("compliance rejected")
+        .to_string();
+    let compliance_error_code = compliance_json
+        .get("error_code")
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned);
+    let compliance_results = build_compliance_results(
+        &req.subjects,
+        compliance_json.get("normalized_subjects"),
+        &compliance_decision,
+        compliance_error_code.as_deref(),
+    );
+    if !compliance_accepted || !compliance_decision.eq_ignore_ascii_case("PASS") {
+        return (
+            axum::http::StatusCode::OK,
+            Json(StartOtcOrchestrationResponse {
+                accepted: false,
+                workflow_run_id,
+                policy_version: policy_version.clone(),
+                policy_hash: policy_hash.clone(),
+                attestation_id: compliance_json
+                    .get("attestation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                attestation_hash: compliance_json
+                    .get("attestation_hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                intent_submissions,
+                compliance_results,
+                proof_job: None,
+                error_code: Some(
+                    compliance_error_code.unwrap_or_else(|| "COMPLIANCE_DECISION_BLOCK".to_string()),
+                ),
+                reason: compliance_reason,
+            }),
+        );
     }
 
     let attestation_id = compliance_json
@@ -290,9 +532,11 @@ pub async fn start_otc_orchestration(
             accepted: true,
             workflow_run_id,
             policy_version,
+            policy_hash,
             attestation_id,
             attestation_hash,
             intent_submissions,
+            compliance_results,
             proof_job: Some(proof_job),
             error_code: None,
             reason: "otc orchestration started".to_string(),
@@ -465,30 +709,120 @@ fn verify_write_auth<T: serde::Serialize>(
     headers: &HeaderMap,
     payload: &T,
 ) -> Result<(), AppError> {
-    if !state.config.internal_auth_enabled {
+    if !state.config.internal_auth_enabled && !state.config.wallet_auth_enabled {
         return Ok(());
     }
-    let secret = state
-        .config
-        .internal_auth_secret
-        .as_deref()
-        .ok_or_else(|| AppError::internal("AUTH_CONFIG_ERROR", "internal auth secret missing"))?;
-    let sig = headers
+
+    let internal_sig = headers
         .get("x-internal-signature")
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| {
-            AppError::bad_request("AUTH_MISSING_SIGNATURE", "missing x-internal-signature")
+        .filter(|v| !v.is_empty());
+    if let Some(sig) = internal_sig {
+        if !state.config.internal_auth_enabled {
+            return Err(AppError::unauthorized(
+                "AUTH_INTERNAL_DISABLED",
+                "internal signature auth is disabled",
+            ));
+        }
+        let secret = state
+            .config
+            .internal_auth_secret
+            .as_deref()
+            .ok_or_else(|| {
+                AppError::internal("AUTH_CONFIG_ERROR", "internal auth secret missing")
+            })?;
+        let canonical = serde_json::to_string(payload).map_err(|e| {
+            AppError::internal(
+                "AUTH_SERIALIZE_ERROR",
+                format!("auth payload serialization failed: {e}"),
+            )
         })?;
-    let canonical = serde_json::to_string(payload).map_err(|e| {
-        AppError::internal(
-            "AUTH_SERIALIZE_ERROR",
-            format!("auth payload serialization failed: {e}"),
-        )
-    })?;
-    verify_internal_signature(&canonical, sig, secret)
-        .map_err(|e| AppError::bad_request("AUTH_INVALID_SIGNATURE", e))
+        return verify_internal_signature(&canonical, sig, secret)
+            .map_err(|e| AppError::bad_request("AUTH_INVALID_SIGNATURE", e));
+    }
+
+    if state.config.wallet_auth_enabled {
+        let _claims = verify_wallet_bearer_claims(state, headers)?;
+        return Ok(());
+    }
+
+    if state.config.internal_auth_enabled {
+        return Err(AppError::bad_request(
+            "AUTH_MISSING_SIGNATURE",
+            "missing x-internal-signature",
+        ));
+    }
+
+    Ok(())
+}
+
+fn verify_wallet_bearer_claims(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<WalletClaims, AppError> {
+    let token = extract_bearer_token(headers)?;
+    let secret = state
+        .config
+        .wallet_jwt_secret
+        .as_deref()
+        .ok_or_else(|| AppError::internal("AUTH_CONFIG_ERROR", "wallet jwt secret missing"))?;
+    verify_access_token(token, secret).map_err(|e| AppError::unauthorized("AUTH_INVALID_TOKEN", e))
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Result<&str, AppError> {
+    let raw = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            AppError::unauthorized("AUTH_MISSING_BEARER", "missing Authorization header")
+        })?;
+    let stripped = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))
+        .ok_or_else(|| {
+            AppError::unauthorized("AUTH_BAD_BEARER", "Authorization must be Bearer token")
+        })?;
+    if stripped.trim().is_empty() {
+        return Err(AppError::unauthorized(
+            "AUTH_BAD_BEARER",
+            "empty bearer token",
+        ));
+    }
+    Ok(stripped.trim())
+}
+
+fn error_wallet_nonce(err: AppError) -> (axum::http::StatusCode, Json<WalletNonceResponse>) {
+    error!(error_code = err.code, reason = %err.message, "wallet nonce rejected");
+    (
+        err.status,
+        Json(WalletNonceResponse {
+            accepted: false,
+            wallet_address: String::new(),
+            nonce: String::new(),
+            message: String::new(),
+            expires_at: 0,
+            error_code: Some(err.code.to_string()),
+            reason: err.message,
+        }),
+    )
+}
+
+fn error_wallet_verify(err: AppError) -> (axum::http::StatusCode, Json<WalletVerifyResponse>) {
+    error!(error_code = err.code, reason = %err.message, "wallet verify rejected");
+    (
+        err.status,
+        Json(WalletVerifyResponse {
+            accepted: false,
+            access_token: String::new(),
+            token_type: "Bearer".to_string(),
+            expires_at: 0,
+            wallet_address: String::new(),
+            role: String::new(),
+            error_code: Some(err.code.to_string()),
+            reason: err.message,
+        }),
+    )
 }
 
 fn error_submit(err: AppError) -> (axum::http::StatusCode, Json<SubmitProofJobResponse>) {
@@ -560,12 +894,67 @@ fn error_orchestration(
             accepted: false,
             workflow_run_id: String::new(),
             policy_version: String::new(),
+            policy_hash: String::new(),
             attestation_id: String::new(),
             attestation_hash: String::new(),
             intent_submissions: Vec::new(),
+            compliance_results: Vec::new(),
             proof_job: None,
             error_code: Some(err.code.to_string()),
             reason: err.message,
         }),
     )
+}
+
+fn build_compliance_results(
+    requested_subjects: &[super::schema::OrchestrationSubjectInput],
+    normalized_subjects: Option<&serde_json::Value>,
+    decision: &str,
+    error_code: Option<&str>,
+) -> Vec<OtcComplianceSubjectResult> {
+    let passed = decision.eq_ignore_ascii_case("PASS");
+    let reason_code = if passed {
+        None
+    } else {
+        Some(
+            error_code
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| format!("COMPLIANCE_{}", decision.to_uppercase())),
+        )
+    };
+
+    if let Some(arr) = normalized_subjects.and_then(|v| v.as_array()) {
+        let out = arr
+            .iter()
+            .filter_map(|item| item.get("subject_id").and_then(|v| v.as_str()))
+            .map(|subject_id| OtcComplianceSubjectResult {
+                subject_id: subject_id.to_string(),
+                passed,
+                decision: decision.to_string(),
+                reason_code: reason_code.clone(),
+            })
+            .collect::<Vec<_>>();
+        if !out.is_empty() {
+            return out;
+        }
+    }
+
+    requested_subjects
+        .iter()
+        .enumerate()
+        .map(|(i, subject)| {
+            let subject_id = subject
+                .counterparty
+                .as_ref()
+                .map(|v| v.counterparty_id.clone())
+                .or_else(|| subject.entity.as_ref().map(|v| v.entity_id.clone()))
+                .unwrap_or_else(|| format!("subject-{}", i + 1));
+            OtcComplianceSubjectResult {
+                subject_id,
+                passed,
+                decision: decision.to_string(),
+                reason_code: reason_code.clone(),
+            }
+        })
+        .collect()
 }

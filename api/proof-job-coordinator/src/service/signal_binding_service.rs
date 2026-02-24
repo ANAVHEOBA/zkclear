@@ -1,5 +1,7 @@
 use crate::app::AppState;
 use crate::module::proof_job::model::{ProofJobRecord, ProverArtifactsRecord};
+use crate::module::proof_job::schema::ProofType;
+use crate::service::binding_codec_service::settlement_binding_fields;
 use serde_json::Value;
 
 pub fn validate_public_signal_binding(
@@ -13,6 +15,46 @@ pub fn validate_public_signal_binding(
             "public.json must be an array",
         )
     })?;
+
+    if matches!(job.proof_type, ProofType::Settlement) {
+        let idx_policy = binding_index(&job.receipt_context, "policyVersion", 0)?;
+        let idx_receipt = binding_index(&job.receipt_context, "receiptHash", 1)?;
+        let idx_domain = binding_index(&job.receipt_context, "domainSeparator", 2)?;
+        let idx_workflow = binding_index(&job.receipt_context, "workflowRunId", 3)?;
+        let idx_binding = binding_index(&job.receipt_context, "bindingHash", 4)?;
+
+        let expected_workflow = expected_binding_value(&job.receipt_context, "workflowRunId")
+            .unwrap_or_else(|| job.workflow_run_id.clone());
+        let expected_policy = expected_binding_value(&job.receipt_context, "policyVersion")
+            .unwrap_or_else(|| job.policy_version.clone());
+        let expected_receipt = expected_binding_value(&job.receipt_context, "receiptHash")
+            .unwrap_or_else(|| artifacts.receipt_hash.clone());
+        let expected_domain = expected_binding_value(&job.receipt_context, "domainSeparator")
+            .unwrap_or_else(|| state.config.signal_domain_separator.clone());
+        let fields = settlement_binding_fields(
+            &expected_workflow,
+            &expected_policy,
+            &expected_receipt,
+            &expected_domain,
+        );
+
+        compare_signal(signals, idx_policy, "policyVersion", &fields.policy_version)?;
+        compare_signal(signals, idx_receipt, "receiptHash", &fields.receipt_hash)?;
+        compare_signal(
+            signals,
+            idx_domain,
+            "domainSeparator",
+            &fields.domain_separator,
+        )?;
+        compare_signal(
+            signals,
+            idx_workflow,
+            "workflowRunId",
+            &fields.workflow_run_id,
+        )?;
+        compare_signal(signals, idx_binding, "bindingHash", &fields.binding_hash)?;
+        return Ok(());
+    }
 
     let idx_workflow = binding_index(&job.receipt_context, "workflowRunId", 0)?;
     let idx_policy = binding_index(&job.receipt_context, "policyVersion", 1)?;
@@ -66,28 +108,32 @@ fn compare_signal(
     label: &str,
     expected: &str,
 ) -> Result<(), String> {
-    let actual = signals
-        .get(idx)
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            non_retryable(
-                "BINDING_SIGNAL_MISSING",
-                format!("public signal at index {idx} for {label} not found"),
-            )
-        })?
-        .trim();
+    let actual = signals.get(idx).and_then(signal_to_string).ok_or_else(|| {
+        non_retryable(
+            "BINDING_SIGNAL_MISSING",
+            format!("public signal at index {idx} for {label} not found"),
+        )
+    })?;
 
-    if actual != expected.trim() {
+    if actual.trim() != expected.trim() {
         return Err(non_retryable(
             "BINDING_MISMATCH",
             format!(
                 "{label} mismatch: expected={} actual={}",
                 expected.trim(),
-                actual
+                actual.trim()
             ),
         ));
     }
     Ok(())
+}
+
+fn signal_to_string(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.trim().to_string()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 fn non_retryable(code: &str, message: impl Into<String>) -> String {

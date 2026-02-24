@@ -3,21 +3,25 @@ use std::time::Duration;
 
 use confidential_match::handler::process_confidential_match;
 use confidential_match::models::{
-    ConfidentialMatchRequest, ExternalSignals, MatchDecision, NormalizedIntent as MatchIntent, PolicyContext,
-    Side as MatchSide,
+    ConfidentialMatchRequest, ExternalSignals, MatchDecision, NormalizedIntent as MatchIntent,
+    PolicyContext, Side as MatchSide,
 };
 use intent_intake::handler::process_intake;
 use intent_intake::models::IntentIntakeRequest;
 use proof_generate::handler::process_proof_generate;
-use proof_generate::models::{MatchResult, PolicyResult, ProofGenerateRequest, SettlementParams as ProofSettlementParams};
+use proof_generate::models::{
+    MatchResult, PolicyResult, ProofGenerateRequest, SettlementParams as ProofSettlementParams,
+};
 use publish_receipt::handler::process_publish_receipt;
 use publish_receipt::models::{
-    ChainValidationState, PublishReceiptRequest, PublishReceiptResponse, SettlementStatus as PublishStatus,
+    ChainValidationState, PublishReceiptRequest, PublishReceiptResponse,
+    SettlementStatus as PublishStatus,
 };
 use serde::{Deserialize, Serialize};
 use settle_private::handler::process_settle_private;
 use settle_private::models::{
-    ExecutionControl, ProofBundle, SettlePrivateRequest, SettlementInstruction, SettlementStatus as PrivateStatus,
+    ExecutionControl, ProofBundle, SettlePrivateRequest, SettlementInstruction,
+    SettlementStatus as PrivateStatus,
 };
 
 #[derive(Debug, Deserialize)]
@@ -107,13 +111,17 @@ fn run() -> Result<(), String> {
 
     let resolved_signals = resolve_external_signals(&req)?;
 
-    let intake = process_intake(req.intent_intake).map_err(|e| format!("intent-intake failed: {e}"))?;
+    let intake =
+        process_intake(req.intent_intake).map_err(|e| format!("intent-intake failed: {e}"))?;
 
     let intents_for_match = intake
         .normalized_private_intents
         .iter()
         .map(|it| {
-            let size = it.size.parse::<f64>().map_err(|e| format!("invalid size: {e}"))?;
+            let size = it
+                .size
+                .parse::<f64>()
+                .map_err(|e| format!("invalid size: {e}"))?;
             let limit_price = it
                 .limit_price
                 .parse::<f64>()
@@ -150,8 +158,8 @@ fn run() -> Result<(), String> {
         },
     };
 
-    let matched =
-        process_confidential_match(match_req).map_err(|e| format!("confidential-match failed: {e}"))?;
+    let matched = process_confidential_match(match_req)
+        .map_err(|e| format!("confidential-match failed: {e}"))?;
     if matched.match_decision != MatchDecision::Accept {
         return Err("confidential-match rejected".to_string());
     }
@@ -177,7 +185,8 @@ fn run() -> Result<(), String> {
         witness_seed: req.proving.witness_seed,
     };
 
-    let proved = process_proof_generate(proof_req).map_err(|e| format!("proof-generate failed: {e}"))?;
+    let proved =
+        process_proof_generate(proof_req).map_err(|e| format!("proof-generate failed: {e}"))?;
 
     let settle_req = SettlePrivateRequest {
         workflow_run_id: intake.workflow_run_id.clone(),
@@ -202,7 +211,8 @@ fn run() -> Result<(), String> {
         },
     };
 
-    let settled = process_settle_private(settle_req).map_err(|e| format!("settle-private failed: {e}"))?;
+    let settled =
+        process_settle_private(settle_req).map_err(|e| format!("settle-private failed: {e}"))?;
     if settled.settlement_status != PrivateStatus::Settled {
         return Err("settle-private did not settle".to_string());
     }
@@ -240,7 +250,8 @@ fn run() -> Result<(), String> {
         publish_result,
     };
 
-    let output = serde_json::to_string_pretty(&out).map_err(|e| format!("serialization failed: {e}"))?;
+    let output =
+        serde_json::to_string_pretty(&out).map_err(|e| format!("serialization failed: {e}"))?;
     println!("{output}");
     Ok(())
 }
@@ -257,7 +268,9 @@ fn resolve_external_signals(req: &OrchestratorRequest) -> Result<OrchestratorSig
         .ok_or_else(|| "external_signals missing while confidential_http disabled".to_string())
 }
 
-fn fetch_signals_via_confidential_http(cfg: &ConfidentialHttpConfig) -> Result<OrchestratorSignals, String> {
+fn fetch_signals_via_confidential_http(
+    cfg: &ConfidentialHttpConfig,
+) -> Result<OrchestratorSignals, String> {
     if cfg.endpoint.trim().is_empty() {
         return Err("confidential_http.endpoint cannot be empty".to_string());
     }
@@ -271,9 +284,8 @@ fn fetch_signals_via_confidential_http(cfg: &ConfidentialHttpConfig) -> Result<O
     let mut request = client.get(&cfg.endpoint);
 
     if let Some(env_name) = &cfg.api_key_env {
-        let key = std::env::var(env_name).map_err(|_| {
-            format!("api key env var `{env_name}` not found for confidential_http")
-        })?;
+        let key = std::env::var(env_name)
+            .map_err(|_| format!("api key env var `{env_name}` not found for confidential_http"))?;
         let header_name = cfg
             .api_key_header
             .clone()
